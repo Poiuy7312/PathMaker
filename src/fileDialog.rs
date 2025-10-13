@@ -1,4 +1,10 @@
-use std::{collections::HashSet, env, fs, path::Path};
+use std::{
+    collections::HashSet,
+    env,
+    ffi::{OsStr, OsString},
+    fs,
+    path::{Path, PathBuf},
+};
 use walkdir::{DirEntry, WalkDir};
 
 use serde_json::{self, Value};
@@ -6,43 +12,84 @@ use std::collections::HashMap;
 
 /// Walks Directory and gets file names for file selection
 
-pub fn get_files() -> HashMap<String, String> {
-    let current_dir = env::current_dir().unwrap();
-    let mut file_map: HashMap<String, String> = HashMap::new();
-
-    let json = std::ffi::OsStr::new("json");
-
-    let file_dir: Vec<DirEntry> = WalkDir::new(current_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.metadata().unwrap().is_file() && e.path().extension() == Some(json))
-        .collect();
-
-    for file in file_dir {
-        file_map.insert(
-            file.path()
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_string(),
-            file.path()
-                .to_str()
-                .expect("Couldn't convert to string")
-                .to_string(),
-        );
-    }
-    return file_map;
+pub struct DirectoryNode {
+    pub name: String,
+    pub path: PathBuf,
+    pub is_dir: bool,
+    pub children: Vec<DirectoryNode>,
 }
+
+/// Build a DirectoryNode for `path` recursively.
+fn build_tree(path: &Path) -> DirectoryNode {
+    let allowed_extension = OsStr::new("json");
+    let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned());
+
+    let mut node = DirectoryNode {
+        name,
+        path: path.to_path_buf(),
+        is_dir: path.is_dir(),
+        children: Vec::new(),
+    };
+
+    if node.is_dir {
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let p = entry.path();
+                if p.is_dir() {
+                    node.children.push(build_tree(&p));
+                } else {
+                    match p.extension() {
+                        Some(ext) => {
+                            if ext == allowed_extension {
+                                node.children.push(build_tree(&p));
+                            }
+                        }
+                        None => {}
+                    }
+                }
+                // Skip hidden entries if desired, or add filtering here.
+            }
+        }
+    }
+
+    node
+}
+
+/// Returns a tree rooted at the current working directory.
+pub fn get_file_tree() -> DirectoryNode {
+    let current_dir = env::current_dir().expect("Failed to get current dir");
+    build_tree(&current_dir)
+}
+
+fn print_tree(node: &DirectoryNode, indent: usize) {
+    let indent_str = " ".repeat(indent);
+    let kind = if node.is_dir { "[D]" } else { "[F]" };
+    println!(
+        "{}{} {} ({})",
+        indent_str,
+        kind,
+        node.name,
+        node.path.display()
+    );
+    for child in &node.children {
+        print_tree(child, indent + 2);
+    }
+}
+
+/// Walks Directory and gets file names for file selection
+///
 
 /// Parses specified json file and gets the stored tile locations to be implemented on the map.
 
 pub fn parse_map_file(
     file_string: String,
 ) -> (
-    HashSet<(u32, u32)>,
-    HashSet<(u32, u32)>,
-    HashSet<(u32, u32)>,
+    HashSet<(i32, i32)>,
+    HashSet<(i32, i32)>,
+    HashSet<(i32, i32)>,
     u32,
     u32,
 ) {
@@ -57,15 +104,15 @@ pub fn parse_map_file(
         .expect("no tile amount value")
         .as_i64()
         .expect("Invalid Number") as u32;
-    let mut obstacle_map: HashSet<(u32, u32)> = HashSet::new();
-    let mut player_map: HashSet<(u32, u32)> = HashSet::new();
-    let mut enemy_map: HashSet<(u32, u32)> = HashSet::new();
+    let mut obstacle_map: HashSet<(i32, i32)> = HashSet::new();
+    let mut player_map: HashSet<(i32, i32)> = HashSet::new();
+    let mut enemy_map: HashSet<(i32, i32)> = HashSet::new();
     if let Some(obstacles) = json["obstacles"].as_array() {
         obstacles.iter().for_each(|a| {
             if let Some(cords) = a.as_array() {
                 obstacle_map.insert((
-                    cords[0].as_i64().expect("Invalid Number") as u32,
-                    cords[1].as_i64().expect("Invalid Number") as u32,
+                    cords[0].as_i64().expect("Invalid Number") as i32,
+                    cords[1].as_i64().expect("Invalid Number") as i32,
                 ));
             }
         })
@@ -74,8 +121,8 @@ pub fn parse_map_file(
         players.iter().for_each(|a| {
             if let Some(cords) = a.as_array() {
                 player_map.insert((
-                    cords[0].as_i64().expect("Invalid Number") as u32,
-                    cords[1].as_i64().expect("Invalid Number") as u32,
+                    cords[0].as_i64().expect("Invalid Number") as i32,
+                    cords[1].as_i64().expect("Invalid Number") as i32,
                 ));
             }
         })
@@ -84,8 +131,8 @@ pub fn parse_map_file(
         enemies.iter().for_each(|a| {
             if let Some(cords) = a.as_array() {
                 enemy_map.insert((
-                    cords[0].as_i64().expect("Invalid Number") as u32,
-                    cords[1].as_i64().expect("Invalid Number") as u32,
+                    cords[0].as_i64().expect("Invalid Number") as i32,
+                    cords[1].as_i64().expect("Invalid Number") as i32,
                 ));
             }
         })
@@ -102,8 +149,9 @@ pub fn parse_map_file(
 
 /// Reads specified file and returns String value
 
-pub fn read_file(path: &String) -> String {
+pub fn read_file(path: &str) -> String {
     let path = Path::new(&path);
+    println!("Reading File: {:#?}", path);
     match fs::read_to_string(path) {
         Ok(value) => {
             return value;
