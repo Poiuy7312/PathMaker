@@ -22,6 +22,7 @@ pub struct FileExplorer {
     pub id: String,
     pub height: u32,
     pub width: u32,
+    pub default_dir: String,
     pub directories: RefCell<HashMap<String, Vec<Box<dyn ValidDropdownOption>>>>,
     pub current_display: String,
     pub active: bool,
@@ -83,6 +84,9 @@ impl Component for FileExplorer {
 
     fn change_active(&mut self, new_value: bool) {
         self.active = new_value;
+        if !new_value {
+            self.current_display = self.default_dir.clone();
+        }
     }
 
     fn is_active(&self) -> bool {
