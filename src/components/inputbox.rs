@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use sdl2::mouse::MouseState;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::{Point, Rect};
@@ -5,6 +7,7 @@ use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::surface::Surface;
 use sdl2::video::{Window, WindowContext};
 
+use crate::components::button::Interface;
 use crate::components::Component;
 use sdl2::ttf;
 
@@ -21,7 +24,7 @@ pub struct InputBox {
 }
 
 impl Component for InputBox {
-    fn on_click(&mut self, mouse_state: Point) -> (bool, Option<&str>) {
+    fn on_click(&mut self, mouse_state: Point) -> (bool, Option<String>) {
         if self.mouse_over_component(mouse_state) {
             self.text = " ".to_string();
             self.active = true;
@@ -30,8 +33,13 @@ impl Component for InputBox {
         return (false, None);
     }
 
-    fn get_id(&self) -> &str {
-        &self.id
+    fn mouse_over_component(&self, mouse_position: Point) -> bool {
+        let component: Rect = self.get_rect(self.location);
+        return component.contains_point(mouse_position);
+    }
+
+    fn get_id(&self) -> String {
+        return self.id.to_string();
     }
 
     fn change_location(&mut self, new_location: Point) {
@@ -42,6 +50,14 @@ impl Component for InputBox {
         self.width = new_width;
     }
 
+    fn change_active(&mut self, new_value: bool) {
+        self.active = new_value;
+    }
+
+    fn is_active(&self) -> bool {
+        return self.active;
+    }
+
     fn get_width(&self) -> u32 {
         self.width
     }
@@ -49,24 +65,29 @@ impl Component for InputBox {
     fn get_height(&self) -> u32 {
         self.height
     }
+    fn get_location(&self) -> Point {
+        self.location
+    }
 
     fn change_height(&mut self, new_height: u32) {
         self.height = new_height;
     }
 }
 
-impl InputBox {
-    fn mouse_over_component(&self, mouse_position: Point) -> bool {
-        let component: Rect = self.get_rect(self.location);
-        return component.contains_point(mouse_position);
-    }
+impl Interface for InputBox {
     fn get_rect(&self, point: Point) -> Rect {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
-    pub fn draw<'a>(
+
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
+        _: Option<Point>,
         font: &mut ttf::Font<'_, 'static>,
     ) {
         let rectangle = self.get_rect(self.location);
@@ -117,5 +138,11 @@ impl InputBox {
                 canvas.copy(&font_texture, None, text_map).unwrap();
             }
         }
+    }
+}
+
+impl InputBox {
+    pub fn change_text(&mut self, new_text: String) {
+        self.text = new_text;
     }
 }
