@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use sdl2::rect::Point;
 
-use crate::components::button::*;
+use crate::components::{button::*, inputbox::*, Component};
 
 pub fn layout_root(
     buttons: &mut Vec<Box<dyn ValidDropdownOption>>,
@@ -11,10 +13,9 @@ pub fn layout_root(
 ) {
     let mut offset: u32 = 0;
     for b in buttons.iter_mut().filter(|a| a.contains(filter)) {
-        let y = origin.y + (offset as i32 * height as i32);
-        let loc = Point::new(origin.x, y);
+        let col = origin.y + (offset as i32 * height as i32);
+        let loc = Point::new(origin.x, col);
         let used = b.layout(loc, width, height);
-        println!("{}", used);
         offset += used;
     }
 }
