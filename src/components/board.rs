@@ -43,7 +43,10 @@ pub struct Board {
 
 impl Component for Board {
     /// Specify functionality for when the board is clicked on
-    fn on_click(&mut self, mouse_point: Point) -> (bool, Option<&str>) {
+    fn on_click(&mut self, mouse_point: Point) -> (bool, Option<String>) {
+        if !self.active {
+            return (false, None);
+        }
         let grid = self.grid();
         let point = self
             .get_tile_information(&grid)
@@ -72,12 +75,29 @@ impl Component for Board {
         return (false, None);
     }
 
-    fn get_id(&self) -> &str {
-        return &self.id;
+    fn mouse_over_component(&self, mouse_position: Point) -> bool {
+        let component: Rect = self.get_rect();
+        return component.contains_point(mouse_position);
+    }
+
+    fn get_id(&self) -> String {
+        return self.id.to_string();
+    }
+
+    fn get_location(&self) -> Point {
+        self.location
     }
 
     fn change_location(&mut self, new_location: Point) {
         self.location = new_location;
+    }
+
+    fn change_active(&mut self, new_value: bool) {
+        self.active = new_value;
+    }
+
+    fn is_active(&self) -> bool {
+        return self.active;
     }
 
     fn get_width(&self) -> u32 {
@@ -173,17 +193,19 @@ impl Board {
 
         return tile_dimensions;
     }
+
+    fn get_rect(&self) -> Rect {
+        Rect::new(
+            self.location.x(),
+            self.location.y(),
+            self.height,
+            self.width,
+        )
+    }
     /// Draw Function for board
     pub fn draw<'a>(&self, canvas: &mut Canvas<Window>) {
         canvas.set_draw_color(Color::RGB(255, 255, 255));
-        canvas
-            .fill_rect(Rect::new(
-                self.location.x(),
-                self.location.y(),
-                self.height,
-                self.width,
-            ))
-            .unwrap();
+        canvas.fill_rect(self.get_rect()).unwrap();
         let grid = self.grid();
         let tiles = self.get_tile_information(&grid);
         for tile in tiles.iter() {
