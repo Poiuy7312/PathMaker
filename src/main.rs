@@ -61,23 +61,10 @@ pub fn main() {
     let mut controls_width = window_width * 1 / 6;
     //= Rect::new(998, 0, 1000, 1000);
 
-    let mut search_file = InputBox {
-        default_text: "Search File".to_string(),
-        text: "".to_string(),
-        active: false,
-        text_color: TERTIARY_COLOR,
-        background_color: PRIMARY_COLOR,
-        height: 50,
-        width: 200,
-        id: String::from("Search_File"),
-        location: Point::new(window_width as i32 - 200, 1),
-    };
-
     let mut directory_buttons: Vec<Box<dyn ValidDropdownOption>> =
         util::walk_tree(&directory_tree, window_width);
 
-    let directories: HashMap<String, Vec<Box<dyn ValidDropdownOption>>> =
-        util::get_dir_map(&directory_tree, window_width);
+    let (directories, filtered_directories) = util::get_dir_map(&directory_tree, window_width);
 
     let save_widget_display: Box<dyn Interface> = Box::new(InputBox {
         default_text: "Chosen_Directory".to_string(),
@@ -98,7 +85,8 @@ pub fn main() {
         id: String::from("Save_File_Exp"),
         height: 0,
         width: 0,
-        directories: RefCell::new(directories),
+        directories: RefCell::new(filtered_directories),
+        default_dir: home_dir.clone(),
         current_display: home_dir.clone(),
         active: false,
     });
@@ -249,7 +237,7 @@ pub fn main() {
     let mut save_widget = Widget {
         location: Point::new(200, 60),
         id: String::from("SAVE_WIDGET"),
-        result: Some(home_dir),
+        result: Some(home_dir.clone()),
         height: 300,
         width: 500,
         buttons: save_widget_buttons,
@@ -257,7 +245,30 @@ pub fn main() {
         active: false,
     };
 
-    let mut go_back_button = StandardButton {
+    let mut search_file: Box<dyn Interface> = Box::new(InputBox {
+        default_text: "Search File".to_string(),
+        text: "".to_string(),
+        active: false,
+        text_color: TERTIARY_COLOR,
+        background_color: PRIMARY_COLOR,
+        height: 50,
+        width: 200,
+        id: String::from("Search_File"),
+        location: Point::new(window_width as i32 - 200, 1),
+    });
+
+    let select_file_explorer: Box<dyn Interface> = Box::new(FileExplorer {
+        location: Point::new(0, 0),
+        id: String::from("Select_File_Exp"),
+        height: 0,
+        width: 0,
+        directories: RefCell::new(directories),
+        default_dir: home_dir.clone(),
+        current_display: home_dir.clone(),
+        active: false,
+    });
+
+    let go_back_button: Box<dyn Interface> = Box::new(StandardButton {
         height: 50,
         width: 200,
         location: Point::new(window_width as i32 - 200, window_height as i32 - 25),
@@ -268,6 +279,33 @@ pub fn main() {
         id: String::from("Back"),
         filter: None,
         active: false,
+    });
+
+    let file_select_layout: Vec<Vec<&'static str>> = vec![
+        vec!["Search_File"],
+        vec!["Select_File_Exp"],
+        vec!["Select_File_Exp"],
+        vec!["Select_File_Exp"],
+        vec!["Select_File_Exp"],
+        vec!["Select_File_Exp"],
+        vec!["Back"],
+    ];
+
+    let file_select_buttons = HashMap::from([
+        ("Search_File", search_file),
+        ("Select_File_Exp", select_file_explorer),
+        ("Back", go_back_button),
+    ]);
+
+    let mut file_select_widget: Widget = Widget {
+        location: Point::new(window_width as i32 * 5 / 6, 0),
+        id: String::from("Board_Control"),
+        result: None,
+        height: window_height,
+        width: controls_width,
+        active: false,
+        buttons: file_select_buttons,
+        layout: file_select_layout,
     };
 
     /*----- File Explorer Components ----- */
@@ -340,9 +378,9 @@ pub fn main() {
             /*------- File Selection Menu -------*/
             board_control_widget.change_active(false);
 
-            go_back_button.active = true;
+            file_select_widget.change_active(true);
 
-            let search_text = match &search_file.text.trim().len() {
+            /*let search_text = match &search_file.text.trim().len() {
                 0 => None,
                 _ => Some(search_file.text.as_str()),
             };
@@ -353,25 +391,9 @@ pub fn main() {
                 200,
                 25,
                 search_text,
-            );
+            );*/
 
-            search_file.draw(&mut canvas, &texture_creator, None, &mut font);
-            directory_buttons
-                .iter_mut()
-                .filter(|a| a.contains(search_text))
-                .for_each(|a| {
-                    if search_text.is_some() {
-                        a.set_filter(search_text);
-                    }
-                    a.change_active(true);
-                    a.draw(
-                        &mut canvas,
-                        &texture_creator,
-                        Some(mouse_position),
-                        &mut font,
-                    );
-                });
-            go_back_button.draw(
+            file_select_widget.draw(
                 &mut canvas,
                 &texture_creator,
                 Some(mouse_position),
@@ -459,8 +481,7 @@ pub fn main() {
             if game_board.on_click(mouse_position).0 {
                 println!("Board Clicked On");
                 game_board.draw(&mut canvas);
-            }
-            if !select_file {
+            } else if !select_file {
                 let (clicked_button, (_, inner_button_clicked)) =
                     board_control_widget.on_click(mouse_position);
                 println!("{:#?}", clicked_button);
@@ -510,19 +531,84 @@ pub fn main() {
                     None => {}
                 }
             } else {
-                if search_file.on_click(mouse_position).0 {
-                    video_subsystem.text_input().start();
-                    search_file.active = true;
-                } else if go_back_button.mouse_over_component(mouse_position) {
-                    search_file.text = "".to_string();
-                    search_file.active = false;
+                let (clicked_button, (_, inner_button_clicked)) =
+                    file_select_widget.on_click(mouse_position);
+                match clicked_button {
+                    Some(button) => match button.as_str() {
+                        "Search_File" => {
+                            video_subsystem.text_input().start();
+                        }
+                        "Select_File_Exp" => {
+                            if inner_button_clicked.is_some() {
+                                if let Some(file_exp) =
+                                    file_select_widget.buttons.get_mut("Select_File_Exp")
+                                {
+                                    if let Some(button) =
+                                        file_exp.as_any().downcast_mut::<FileExplorer>()
+                                    {
+                                        let new_result = inner_button_clicked.expect("Nope");
+
+                                        button.change_display(new_result.clone());
+                                        save_widget.change_result(Some(new_result.clone()));
+                                        if !fileDialog::is_directory(&new_result) {
+                                            let (
+                                                obstacle_map,
+                                                player_map,
+                                                enemy_map,
+                                                tile_amount_x,
+                                                tile_amount_y,
+                                            ) = fileDialog::parse_map_file(fileDialog::read_file(
+                                                &new_result,
+                                            ));
+                                            game_board = Board {
+                                                location: game_board.location,
+                                                width: game_board.width,
+                                                height: game_board.height,
+                                                tile_amount_x,
+                                                tile_amount_y,
+                                                enemy_pos: enemy_map,
+                                                player_pos: player_map,
+                                                obstacles: obstacle_map,
+                                                active: game_board.active,
+                                                id: game_board.id,
+                                                selected_piece_type: game_board.selected_piece_type,
+                                            };
+                                            game_board.draw(&mut canvas);
+                                            select_file = false;
+                                            components_drawn = false;
+                                            ::std::thread::sleep(Duration::new(
+                                                0,
+                                                1_000_000_000u32 / 15,
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
+                        }
+                        "Back" => {
+                            file_select_widget.change_active(false);
+                            canvas.set_draw_color(Color::RGB(87, 87, 81));
+                            canvas.clear();
+                            game_board.draw(&mut canvas);
+                            select_file = false;
+                            components_drawn = false;
+                            ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
+                        }
+                        _ => {}
+                    },
+                    None => {}
+                }
+
+                /* } else if go_back_button.mouse_over_component(mouse_position) {
+                    file_select_widget.change_active(false);
                     canvas.set_draw_color(Color::RGB(87, 87, 81));
                     canvas.clear();
                     game_board.draw(&mut canvas);
                     select_file = false;
                     components_drawn = false;
                     ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
-                } else {
+                 } else {
                     // run on_click and relayout if any button handled the click
                     for b in directory_buttons.iter_mut() {
                         match b.get_type() {
@@ -588,9 +674,8 @@ pub fn main() {
                             }
                         }
                     }
-                }
+                }*/
                 // sleep for short period after input so to prevent accidental double clicks !BANDAID FIX!
-                ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
             }
         }
         /*-------- Handle Component Inputs -------- */
@@ -614,14 +699,32 @@ pub fn main() {
                     ..
                 } => {
                     if video_subsystem.text_input().is_active() {
-                        if search_file.active {
-                            search_file.text.pop();
+                        if file_select_widget.is_active() {
+                            if let Some(text_box) =
+                                file_select_widget.buttons.get_mut("Search_File")
+                            {
+                                if let Some(text) = text_box.as_any().downcast_mut::<InputBox>() {
+                                    text.text.pop();
+                                }
+                            }
                         }
                     }
                 }
 
                 Event::TextInput { text, .. } => {
-                    search_file.text += &text;
+                    if video_subsystem.text_input().is_active() {
+                        if file_select_widget.is_active() {
+                            if let Some(text_box) =
+                                file_select_widget.buttons.get_mut("Search_File")
+                            {
+                                if let Some(file_text) =
+                                    text_box.as_any().downcast_mut::<InputBox>()
+                                {
+                                    file_text.text += &text;
+                                }
+                            }
+                        }
+                    }
                 }
                 Event::Quit { .. }
                 | Event::KeyDown {
