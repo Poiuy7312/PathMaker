@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 
 use sdl2::mouse::MouseState;
@@ -12,7 +13,7 @@ use crate::components::Component;
 use sdl2::ttf;
 
 #[derive(Copy, Clone)]
-pub enum ButtonType {
+pub enum InterfaceType {
     Dropdown,
     Standard,
     Switch,
@@ -25,12 +26,8 @@ pub enum ValidDropdownType {
     Standard,
 }
 
-pub trait Button: Component {
-    fn mouse_over_component(&self, mouse_position: Point) -> bool;
+pub trait Interface: Component {
     fn get_rect(&self, point: Point) -> Rect;
-    fn change_active(&mut self, new_value: bool);
-    fn is_active(&self) -> bool;
-    fn get_location(&self) -> Point;
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
@@ -38,17 +35,19 @@ pub trait Button: Component {
         mouse_state: Option<Point>,
         font: &mut ttf::Font<'_, 'static>,
     );
+    fn as_any(&mut self) -> &mut dyn Any;
 }
 
-pub trait ValidDropdownOption: Button {
+pub trait ValidDropdownOption: Interface {
     fn contains(&self, text: Option<&str>) -> bool;
     fn layout(&mut self, origin: Point, width: u32, height: u32) -> u32;
     fn set_filter(&mut self, text: Option<&str>);
     fn get_type(&self) -> ValidDropdownType;
+    fn get_options(self: Box<Self>) -> Option<Vec<Box<dyn ValidDropdownOption>>>;
 }
 
 /// Stores Color values to style buttons
-pub struct ButtonStyle {
+pub struct InterfaceStyle {
     pub text_color: Color,
     pub background_color: Color,
     pub hover_color: Color,
@@ -70,37 +69,32 @@ pub struct StandardButton {
 }
 
 impl Component for StandardButton {
-    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<&str>) {
+    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         return (
             self.mouse_over_component(mouse_position),
             Some(self.get_id()),
         );
     }
-    fn get_id(&self) -> &str {
-        return &self.id;
+
+    fn mouse_over_component(&self, mouse_position: Point) -> bool {
+        let component: Rect = self.get_rect(self.location);
+        return component.contains_point(mouse_position) && self.active;
+    }
+
+    fn get_id(&self) -> String {
+        return self.id.to_string();
     }
     fn change_location(&mut self, new_location: Point) {
         self.location = new_location;
+    }
+    fn get_location(&self) -> Point {
+        self.location
     }
     fn get_width(&self) -> u32 {
         self.width
     }
     fn get_height(&self) -> u32 {
         self.height
-    }
-
-    fn change_width(&mut self, new_width: u32) {
-        self.width = new_width;
-    }
-    fn change_height(&mut self, new_height: u32) {
-        self.height = new_height;
-    }
-}
-
-impl Button for StandardButton {
-    fn mouse_over_component(&self, mouse_position: Point) -> bool {
-        let component: Rect = self.get_rect(self.location);
-        return component.contains_point(mouse_position) && self.active;
     }
 
     fn change_active(&mut self, new_value: bool) {
@@ -115,12 +109,21 @@ impl Button for StandardButton {
         return self.active;
     }
 
+    fn change_width(&mut self, new_width: u32) {
+        self.width = new_width;
+    }
+    fn change_height(&mut self, new_height: u32) {
+        self.height = new_height;
+    }
+}
+
+impl Interface for StandardButton {
     fn get_rect(&self, point: Point) -> Rect {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
-    fn get_location(&self) -> Point {
-        return self.location;
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
     }
 
     fn draw<'a>(
@@ -175,6 +178,10 @@ impl ValidDropdownOption for StandardButton {
         }
     }
 
+    fn get_options(self: Box<Self>) -> Option<Vec<Box<dyn ValidDropdownOption>>> {
+        None
+    }
+
     fn get_type(&self) -> ValidDropdownType {
         return ValidDropdownType::Standard;
     }
@@ -183,10 +190,8 @@ impl ValidDropdownOption for StandardButton {
         self.location = origin;
         self.width = width;
         if self.contains(self.filter.as_deref()) {
-            println!("Return 1 for layout");
             return 1;
         }
-        println!("Return 0 for layout");
         0
     }
 
@@ -206,6 +211,7 @@ impl PartialEq for StandardButton {
 }
 
 /// Creates a dropdown menu.
+
 pub struct Dropdown {
     pub height: u32,
     pub width: u32,
@@ -222,7 +228,7 @@ pub struct Dropdown {
 }
 
 impl Component for Dropdown {
-    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<&str>) {
+    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         if self.mouse_over_component(mouse_position) {
             self.clicked_on = !self.clicked_on;
             return (true, None);
@@ -232,7 +238,6 @@ impl Component for Dropdown {
             self.options.iter_mut().for_each(|a| a.change_active(true));
             let (option_clicked, checked_option) = self.check_options(mouse_position);
             if option_clicked {
-                //println!("Found clicked child: {:#?}", checked_option);
                 return (true, checked_option);
             }
         } else {
@@ -242,12 +247,21 @@ impl Component for Dropdown {
         (false, None)
     }
 
-    fn get_id(&self) -> &str {
-        return &self.id;
+    fn mouse_over_component(&self, mouse_position: Point) -> bool {
+        let component: Rect = self.get_rect(self.location);
+        return component.contains_point(mouse_position) && self.active;
+    }
+
+    fn get_id(&self) -> String {
+        return self.id.to_string();
     }
 
     fn change_location(&mut self, new_location: Point) {
         self.location = new_location;
+    }
+
+    fn get_location(&self) -> Point {
+        self.location
     }
 
     fn get_width(&self) -> u32 {
@@ -255,20 +269,6 @@ impl Component for Dropdown {
     }
     fn get_height(&self) -> u32 {
         self.height
-    }
-
-    fn change_width(&mut self, new_width: u32) {
-        self.width = new_width;
-    }
-    fn change_height(&mut self, new_height: u32) {
-        self.height = new_height;
-    }
-}
-
-impl Button for Dropdown {
-    fn mouse_over_component(&self, mouse_position: Point) -> bool {
-        let component: Rect = self.get_rect(self.location);
-        return component.contains_point(mouse_position) && self.active;
     }
 
     fn change_active(&mut self, new_value: bool) {
@@ -292,12 +292,21 @@ impl Button for Dropdown {
         return self.active;
     }
 
+    fn change_width(&mut self, new_width: u32) {
+        self.width = new_width;
+    }
+    fn change_height(&mut self, new_height: u32) {
+        self.height = new_height;
+    }
+}
+
+impl Interface for Dropdown {
     fn get_rect(&self, point: Point) -> Rect {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
-    fn get_location(&self) -> Point {
-        return self.location;
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
     }
 
     fn draw<'a>(
@@ -381,6 +390,10 @@ impl ValidDropdownOption for Dropdown {
         return true;
     }
 
+    fn get_options(self: Box<Self>) -> Option<Vec<Box<dyn ValidDropdownOption>>> {
+        return Some(self.options);
+    }
+
     fn set_filter(&mut self, text: Option<&str>) {
         match text {
             Some(value) => {
@@ -452,7 +465,7 @@ impl Dropdown {
         return lines;
     }
 
-    fn check_options(&mut self, mouse_position: Point) -> (bool, Option<&str>) {
+    fn check_options(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         for a in self.options.iter_mut() {
             let (result, clicked_button) = a.on_click(mouse_position);
             if result {
@@ -473,10 +486,10 @@ pub struct OptionButton {
 }
 
 impl Component for OptionButton {
-    fn get_id(&self) -> &str {
-        return &self.id;
+    fn get_id(&self) -> String {
+        return self.id.to_string();
     }
-    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<&str>) {
+    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         match self
             .options
             .iter()
@@ -487,6 +500,14 @@ impl Component for OptionButton {
             }
             None => return (false, None),
         }
+    }
+
+    fn mouse_over_component(&self, mouse_position: Point) -> bool {
+        self.options
+            .iter()
+            .find(|(_, a)| a.get_rect(a.location).contains_point(mouse_position))
+            .is_some()
+            && self.active
     }
 
     fn change_location(&mut self, new_location: Point) {
@@ -501,28 +522,15 @@ impl Component for OptionButton {
         })
     }
 
+    fn get_location(&self) -> Point {
+        self.location
+    }
+
     fn get_width(&self) -> u32 {
         self.width
     }
     fn get_height(&self) -> u32 {
         self.height
-    }
-
-    fn change_width(&mut self, new_width: u32) {
-        self.width = new_width;
-    }
-    fn change_height(&mut self, new_height: u32) {
-        self.height = new_height;
-    }
-}
-
-impl Button for OptionButton {
-    fn mouse_over_component(&self, mouse_position: Point) -> bool {
-        self.options
-            .iter()
-            .find(|(_, a)| a.get_rect(a.location).contains_point(mouse_position))
-            .is_some()
-            && self.active
     }
 
     fn change_active(&mut self, new_value: bool) {
@@ -536,12 +544,21 @@ impl Button for OptionButton {
         return self.active;
     }
 
+    fn change_width(&mut self, new_width: u32) {
+        self.width = new_width;
+    }
+    fn change_height(&mut self, new_height: u32) {
+        self.height = new_height;
+    }
+}
+
+impl Interface for OptionButton {
     fn get_rect(&self, point: Point) -> Rect {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
-    fn get_location(&self) -> Point {
-        return self.location;
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
     }
 
     fn draw<'a>(
@@ -565,7 +582,7 @@ impl OptionButton {
         location: Point,
         id: String,
         active: bool,
-        option_values: Vec<(String, ButtonStyle)>,
+        option_values: Vec<(String, InterfaceStyle)>,
     ) -> Self {
         let mut options: Vec<(String, StandardButton)> = Vec::new();
         let mut count: i32 = 0;
