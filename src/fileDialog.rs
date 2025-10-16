@@ -58,9 +58,13 @@ fn build_tree(path: &Path) -> DirectoryNode {
     node
 }
 
+pub fn get_current_directory() -> PathBuf {
+    return env::current_dir().expect("Failed to get current dir");
+}
+
 /// Returns a tree rooted at the current working directory.
 pub fn get_file_tree() -> DirectoryNode {
-    let current_dir = env::current_dir().expect("Failed to get current dir");
+    let current_dir = get_current_directory();
     build_tree(&current_dir)
 }
 
@@ -160,6 +164,8 @@ pub fn read_file(path: &str) -> String {
     }
 }
 
-pub fn save_file(file_content: String) {
-    fs::write("test.json", file_content).expect("bad");
+pub fn save_file(path: String, file_content: String) {
+    let path = path + "/test.json";
+    println!("{}", path);
+    fs::write(path, file_content).expect("bad");
 }
