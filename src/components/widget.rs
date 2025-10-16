@@ -65,7 +65,7 @@ impl Widget {
         self.result.clone()
     }
 
-    fn is_active(&self) -> bool {
+    pub fn is_active(&self) -> bool {
         return self.active;
     }
 
@@ -73,7 +73,7 @@ impl Widget {
         return self.location;
     }
 
-    fn change_width(&mut self, new_width: u32) {
+    pub fn change_width(&mut self, new_width: u32) {
         self.width = new_width;
     }
 
@@ -85,7 +85,7 @@ impl Widget {
         self.height
     }
 
-    fn change_height(&mut self, new_height: u32) {
+    pub fn change_height(&mut self, new_height: u32) {
         self.height = new_height;
     }
 
