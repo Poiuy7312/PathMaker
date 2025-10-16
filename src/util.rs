@@ -55,16 +55,21 @@ pub fn walk_tree(
 pub fn get_dir_map(
     node: &fileDialog::DirectoryNode,
     width: u32,
-) -> HashMap<String, Vec<Box<dyn ValidDropdownOption>>> {
+) -> (
+    HashMap<String, Vec<Box<dyn ValidDropdownOption>>>,
+    HashMap<String, Vec<Box<dyn ValidDropdownOption>>>,
+) {
     let mut buttons: Vec<Box<dyn ValidDropdownOption>> = Vec::new();
     let mut map: HashMap<String, Vec<Box<dyn ValidDropdownOption>>> = HashMap::new();
+    let mut filtered_buttons: Vec<Box<dyn ValidDropdownOption>> = Vec::new();
+    let mut filtered_map: HashMap<String, Vec<Box<dyn ValidDropdownOption>>> = HashMap::new();
     if node.is_dir {
         for child in &node.children {
             if child.is_dir {
                 buttons.push(Box::new(StandardButton {
                     height: 25,
                     width: 200,
-                    location: Point::new(width as i32 - 200, 62),
+                    location: Point::new(0, 62),
                     text_color: WHITE,
                     background_color: QUATERNARY_COLOR,
                     hover_color: SECONDARY_COLOR,
@@ -73,10 +78,40 @@ pub fn get_dir_map(
                     active: false,
                     filter: None,
                 }));
-                map.extend(get_dir_map(child, width));
+
+                filtered_buttons.push(Box::new(StandardButton {
+                    height: 25,
+                    width: 200,
+                    location: Point::new(0, 62),
+                    text_color: WHITE,
+                    background_color: QUATERNARY_COLOR,
+                    hover_color: SECONDARY_COLOR,
+                    text: child.name.to_string(),
+                    id: child.path.to_string_lossy().to_string(),
+                    active: false,
+                    filter: None,
+                }));
+                let (child_map, filtered_child_map) = get_dir_map(child, width);
+                map.extend(child_map);
+                filtered_map.extend(filtered_child_map)
+            } else {
+                buttons.push(Box::new(StandardButton {
+                    height: 25,
+                    width: 200,
+                    location: Point::new(width as i32 - 200, 62),
+                    text_color: WHITE,
+                    background_color: SECONDARY_COLOR,
+                    hover_color: WHITE,
+                    text: child.name.to_string(),
+                    id: child.path.to_string_lossy().to_string(),
+
+                    filter: None,
+                    active: false,
+                }))
             }
         }
         map.insert(node.path.to_string_lossy().to_string(), buttons);
+        filtered_map.insert(node.path.to_string_lossy().to_string(), filtered_buttons);
     }
-    return map;
+    return (map, filtered_map);
 }
