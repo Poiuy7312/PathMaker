@@ -19,6 +19,11 @@ pub struct DirectoryNode {
     pub children: Vec<DirectoryNode>,
 }
 
+pub fn is_directory(path: &str) -> bool {
+    let path = Path::new(&path);
+    return path.is_dir();
+}
+
 /// Build a DirectoryNode for `path` recursively.
 fn build_tree(path: &Path) -> DirectoryNode {
     let allowed_extension = OsStr::new("json");
