@@ -32,10 +32,12 @@ pub trait Interface: Component {
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Option<Point>,
+        mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     );
     fn as_any(&mut self) -> &mut dyn Any;
+    fn change_drawn(&mut self, new_val: bool);
+    fn is_drawn(&self) -> bool;
 }
 
 pub trait ValidDropdownOption: Interface {
@@ -66,6 +68,7 @@ pub struct StandardButton {
     pub id: String,
     pub filter: Option<String>,
     pub active: bool,
+    pub drawn: bool,
 }
 
 impl Component for StandardButton {
@@ -126,45 +129,55 @@ impl Interface for StandardButton {
         self
     }
 
+    fn change_drawn(&mut self, new_val: bool) {
+        self.drawn = new_val;
+    }
+
+    fn is_drawn(&self) -> bool {
+        self.drawn
+    }
+
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Option<Point>,
+        mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        let button_background: Rect = self.get_rect(self.location);
-        let font_size = 8 * self.text.chars().count() as u32;
-        let button_outline =
-            Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
-        let text_map = Rect::from_center(button_background.center(), font_size, 20);
-        let mouse_state = mouse_state.expect("No mouse state given");
-        font.set_style(sdl2::ttf::FontStyle::BOLD);
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-        canvas.fill_rect(button_outline).unwrap();
+        if !self.drawn {
+            let button_background: Rect = self.get_rect(self.location);
+            let font_size = 8 * self.text.chars().count() as u32;
+            let button_outline =
+                Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
+            let text_map = Rect::from_center(button_background.center(), font_size, 20);
+            let mouse_state = mouse_state;
+            font.set_style(sdl2::ttf::FontStyle::BOLD);
+            canvas.set_draw_color(Color::RGB(0, 0, 0));
+            canvas.fill_rect(button_outline).unwrap();
 
-        // render a surface, and convert it to a texture bound to the canvas
-        if self.mouse_over_component((mouse_state)) {
-            canvas.set_draw_color(self.hover_color);
-            canvas.fill_rect(button_background).unwrap();
-        } else {
-            canvas.set_draw_color(self.background_color);
-            canvas.fill_rect(button_background).unwrap();
+            // render a surface, and convert it to a texture bound to the canvas
+            if self.mouse_over_component((mouse_state)) {
+                canvas.set_draw_color(self.hover_color);
+                canvas.fill_rect(button_background).unwrap();
+            } else {
+                canvas.set_draw_color(self.background_color);
+                canvas.fill_rect(button_background).unwrap();
+            }
+
+            let font_surface = font
+                .render(&self.text)
+                .blended(self.text_color)
+                .map_err(|e| e.to_string())
+                .unwrap();
+
+            let font_texture: Texture<'_> = texture_creator
+                .create_texture_from_surface(&font_surface)
+                .map_err(|e| e.to_string())
+                .unwrap();
+            canvas
+                .copy(&font_texture, None, text_map)
+                .expect("Button unable to display text");
         }
-
-        let font_surface = font
-            .render(&self.text)
-            .blended(self.text_color)
-            .map_err(|e| e.to_string())
-            .unwrap();
-
-        let font_texture: Texture<'_> = texture_creator
-            .create_texture_from_surface(&font_surface)
-            .map_err(|e| e.to_string())
-            .unwrap();
-        canvas
-            .copy(&font_texture, None, text_map)
-            .expect("Button unable to display text");
     }
 }
 
@@ -225,6 +238,7 @@ pub struct Dropdown {
     pub clicked_on: bool,
     pub options: Vec<Box<dyn ValidDropdownOption>>,
     pub filter: Option<String>,
+    pub drawn: bool,
 }
 
 impl Component for Dropdown {
@@ -309,11 +323,18 @@ impl Interface for Dropdown {
         self
     }
 
+    fn change_drawn(&mut self, new_val: bool) {
+        self.drawn = new_val;
+    }
+    fn is_drawn(&self) -> bool {
+        self.drawn
+    }
+
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Option<Point>,
+        mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
         let button_background: Rect = self.get_rect(self.location);
@@ -321,7 +342,6 @@ impl Interface for Dropdown {
         let button_outline =
             Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
         let text_map = Rect::from_center(button_background.center(), font_size, 20);
-        let mouse_state = mouse_state.expect("No mouse state given");
         font.set_style(sdl2::ttf::FontStyle::BOLD);
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.fill_rect(button_outline).unwrap();
@@ -365,7 +385,7 @@ impl Interface for Dropdown {
                 .iter()
                 .for_each(|a| match a.contains(self.filter.as_deref()) {
                     true => {
-                        a.draw(canvas, texture_creator, Some(mouse_state), font);
+                        a.draw(canvas, texture_creator, mouse_state, font);
                     }
                     false => {}
                 });
@@ -483,6 +503,7 @@ pub struct OptionButton {
     pub id: String,
     pub active: bool,
     pub options: Vec<(String, StandardButton)>,
+    drawn: bool,
 }
 
 impl Component for OptionButton {
@@ -560,12 +581,19 @@ impl Interface for OptionButton {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn change_drawn(&mut self, new_val: bool) {
+        self.drawn = new_val;
+    }
+
+    fn is_drawn(&self) -> bool {
+        self.drawn
+    }
 
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Option<Point>,
+        mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
         // Draw each button in the switch
@@ -583,6 +611,7 @@ impl OptionButton {
         id: String,
         active: bool,
         option_values: Vec<(String, InterfaceStyle)>,
+        drawn: bool,
     ) -> Self {
         let mut options: Vec<(String, StandardButton)> = Vec::new();
         let mut count: i32 = 0;
@@ -601,6 +630,7 @@ impl OptionButton {
                     id: text.to_string(),
                     filter: None,
                     active,
+                    drawn,
                 },
             ));
             count += 1;
@@ -612,6 +642,7 @@ impl OptionButton {
             id,
             active,
             options,
+            drawn,
         }
     }
 }

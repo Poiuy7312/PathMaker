@@ -21,6 +21,7 @@ pub struct InputBox {
     pub width: u32,
     pub id: String,
     pub location: Point,
+    pub drawn: bool,
 }
 
 impl Component for InputBox {
@@ -82,12 +83,19 @@ impl Interface for InputBox {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn change_drawn(&mut self, new_val: bool) {
+        self.drawn = new_val;
+    }
+
+    fn is_drawn(&self) -> bool {
+        self.drawn
+    }
 
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        _: Option<Point>,
+        _: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
         let rectangle = self.get_rect(self.location);
