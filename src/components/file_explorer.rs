@@ -23,9 +23,11 @@ pub struct FileExplorer {
     pub height: u32,
     pub width: u32,
     pub default_dir: String,
-    pub directories: RefCell<HashMap<String, Vec<Box<dyn ValidDropdownOption>>>>,
+    pub directories: RefCell<HashMap<String, (StandardButton, Vec<String>)>>,
     pub current_display: String,
+    pub filter: Option<String>,
     pub active: bool,
+    pub drawn: bool,
 }
 impl Interface for FileExplorer {
     fn get_rect(&self, point: Point) -> Rect {
@@ -35,30 +37,99 @@ impl Interface for FileExplorer {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
+    fn change_drawn(&mut self, new_val: bool) {
+        self.drawn = new_val;
+        for (b, _) in self.directories.borrow_mut().values_mut() {
+            b.change_drawn(new_val);
+        }
+    }
+
+    fn is_drawn(&self) -> bool {
+        self.drawn
+    }
 
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Option<Point>,
+        mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        if let Some(buttons) = self.directories.borrow_mut().get_mut(&self.current_display) {
-            layout::layout_root(buttons, self.location, self.width, 25, None);
-            buttons.iter_mut().for_each(|a| {
-                a.change_active(true);
-                a.draw(canvas, &texture_creator, Some(mouse_state.unwrap()), font);
-            });
+        let mut button_list: Vec<String> = Vec::new();
+
+        if !self.drawn {
+            match &self.filter {
+                Some(filter) => self
+                    .directories
+                    .borrow()
+                    .iter()
+                    .filter(|(_, (b, _))| b.text.contains(filter))
+                    .for_each(|(k, _)| {
+                        button_list.push(k.to_string());
+                    }),
+                None => {
+                    if let Some(buttons) = self.directories.borrow().get(&self.current_display) {
+                        for id in &buttons.1 {
+                            button_list.push(id.clone());
+                        }
+                    }
+                }
+            }
+
+            let mut offset: u32 = 0;
+            button_list
+                .iter()
+                .filter(|&a| self.directories.borrow().get(a).is_some())
+                .for_each(|a| {
+                    let mut binding = self.directories.borrow_mut();
+                    let a = binding.get_mut(a).unwrap();
+                    let col = self.location.y + (offset as i32 * 25 as i32);
+                    let loc = Point::new(self.location.x, col);
+                    let used = a.0.layout(loc, self.width, 25);
+                    offset += used;
+                    a.0.change_active(true);
+                    a.0.draw(canvas, &texture_creator, mouse_state, font);
+                });
+        } else {
+            self.directories
+                .borrow_mut()
+                .values_mut()
+                .filter(|(b, _)| b.mouse_over_component(mouse_state) || !b.is_drawn())
+                .for_each(|(button, _)| {
+                    if button.mouse_over_component(mouse_state) {
+                        match button.is_drawn() {
+                            true => {
+                                button.change_drawn(false);
+                            }
+                            false => {}
+                        }
+                        button.draw(canvas, &texture_creator, mouse_state, font);
+                    } else {
+                        match button.is_drawn() {
+                            true => {}
+                            false => {
+                                button.draw(canvas, &texture_creator, mouse_state, font);
+                                button.change_drawn(true);
+                            }
+                        }
+                    }
+                });
         }
     }
 }
 impl Component for FileExplorer {
     fn on_click(&mut self, mouse_state: Point) -> (bool, Option<String>) {
+        self.change_drawn(false);
         match self.directories.borrow().get(&self.current_display) {
             Some(value) => {
-                for button in value {
-                    if button.mouse_over_component(mouse_state) {
-                        return (true, Some(button.get_id()));
+                for button in &value.1 {
+                    match self.directories.borrow().get(button) {
+                        Some(but) => {
+                            if but.0.mouse_over_component(mouse_state) {
+                                return (true, Some(but.0.get_id()));
+                            }
+                        }
+                        None => return (false, None),
                     }
                 }
                 return (false, None);
@@ -117,5 +188,13 @@ impl Component for FileExplorer {
 impl FileExplorer {
     pub fn change_display(&mut self, new_display: String) {
         self.current_display = new_display
+    }
+
+    pub fn change_filter(&mut self, new_filter: Option<String>) -> bool {
+        if self.filter != new_filter {
+            self.filter = new_filter;
+            return true;
+        }
+        false
     }
 }
