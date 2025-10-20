@@ -47,24 +47,32 @@ pub fn main() {
     let texture_creator = canvas.texture_creator();
     let directory_tree = fileDialog::get_file_tree();
     let mut select_file: bool = false;
-    let mut components_drawn: bool = false;
     let mut save_file: bool = false;
 
     let ttf_context: ttf::Sdl2TtfContext = ttf::init().unwrap();
 
     let mut font: ttf::Font<'_, 'static> = ttf_context
-        .load_font("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 124)
+        .load_font(
+            "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf",
+            124,
+        )
         .expect("Unable to Load Font");
 
     /*----- File Explorer Components ----- */
 
-    let mut controls_width = window_width * 1 / 6;
+    let controls_width = window_width * 1 / 6;
     //= Rect::new(998, 0, 1000, 1000);
 
     let mut directory_buttons: Vec<Box<dyn ValidDropdownOption>> =
         util::walk_tree(&directory_tree, window_width);
 
-    let (directories, filtered_directories) = util::get_dir_map(&directory_tree, window_width);
+    let directories: HashMap<String, (StandardButton, Vec<String>)> =
+        util::get_dir_map(&directory_tree, window_width);
+
+    let filtered_directories: HashMap<String, (StandardButton, Vec<String>)> = directories
+        .clone()
+        .extract_if(|k, _| fileDialog::is_directory(k))
+        .collect();
 
     let save_widget_display: Box<dyn Interface> = Box::new(InputBox {
         default_text: "Chosen_Directory".to_string(),
@@ -76,6 +84,7 @@ pub fn main() {
         width: 0,
         id: String::from("Display"),
         location: Point::new(0, 0),
+        drawn: false,
     });
 
     let home_dir = directory_tree.path.to_string_lossy().to_string();
@@ -88,7 +97,9 @@ pub fn main() {
         directories: RefCell::new(filtered_directories),
         default_dir: home_dir.clone(),
         current_display: home_dir.clone(),
+        filter: None,
         active: false,
+        drawn: false,
     });
 
     let save_widget_accept: Box<dyn Interface> = Box::new(StandardButton {
@@ -102,6 +113,7 @@ pub fn main() {
         id: String::from("Save_Wid_Save"),
         filter: None,
         active: false,
+        drawn: false,
     });
 
     let save_widget_exit: Box<dyn Interface> = Box::new(StandardButton {
@@ -115,6 +127,7 @@ pub fn main() {
         id: String::from("Save_Wid_Exit"),
         filter: None,
         active: false,
+        drawn: false,
     });
 
     /*----- File Explorer Components ----- */
@@ -123,13 +136,14 @@ pub fn main() {
         height: 100,
         width: 200,
         location: Point::new(0, 0),
-        text_color: BLACK,
-        background_color: GREEN,
-        hover_color: WHITE,
+        text_color: WHITE,
+        background_color: PRIMARY_COLOR,
+        hover_color: HOVER_COLOR,
         text: "START".to_string(),
         id: String::from("START"),
         filter: None,
         active: false,
+        drawn: false,
     });
 
     let piece_select: Box<dyn Interface> = Box::new(OptionButton::new(
@@ -164,6 +178,7 @@ pub fn main() {
                 },
             ),
         ],
+        false,
     ));
 
     let upload_map_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -178,6 +193,7 @@ pub fn main() {
 
         filter: None,
         active: false,
+        drawn: false,
     });
 
     let save_map_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -192,6 +208,7 @@ pub fn main() {
 
         filter: None,
         active: false,
+        drawn: false,
     });
 
     let board_control_layout: Vec<Vec<&'static str>> = vec![
@@ -217,6 +234,7 @@ pub fn main() {
         active: false,
         buttons: board_control_buttons,
         layout: board_control_layout,
+        drawn: false,
     };
 
     let save_layout: Vec<Vec<&'static str>> = vec![
@@ -243,6 +261,7 @@ pub fn main() {
         buttons: save_widget_buttons,
         layout: save_layout,
         active: false,
+        drawn: false,
     };
 
     let mut search_file: Box<dyn Interface> = Box::new(InputBox {
@@ -255,6 +274,7 @@ pub fn main() {
         width: 200,
         id: String::from("Search_File"),
         location: Point::new(window_width as i32 - 200, 1),
+        drawn: false,
     });
 
     let select_file_explorer: Box<dyn Interface> = Box::new(FileExplorer {
@@ -265,7 +285,9 @@ pub fn main() {
         directories: RefCell::new(directories),
         default_dir: home_dir.clone(),
         current_display: home_dir.clone(),
+        filter: None,
         active: false,
+        drawn: false,
     });
 
     let go_back_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -279,6 +301,7 @@ pub fn main() {
         id: String::from("Back"),
         filter: None,
         active: false,
+        drawn: false,
     });
 
     let file_select_layout: Vec<Vec<&'static str>> = vec![
@@ -306,6 +329,7 @@ pub fn main() {
         active: false,
         buttons: file_select_buttons,
         layout: file_select_layout,
+        drawn: false,
     };
 
     /*----- File Explorer Components ----- */
@@ -367,18 +391,23 @@ pub fn main() {
             }
 
             if util::mouse_over(save_widget.get_rect(), mouse_position) {
-                save_widget.draw(
-                    &mut canvas,
-                    &texture_creator,
-                    Some(mouse_position),
-                    &mut font,
-                );
+                save_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
             }
         } else if select_file {
             /*------- File Selection Menu -------*/
             board_control_widget.change_active(false);
+            board_control_widget.change_drawn(false);
 
             file_select_widget.change_active(true);
+
+            if let Some(text_box) = file_select_widget.buttons.get_mut("Search_File") {
+                if let Some(file_text) = text_box.as_any().downcast_mut::<InputBox>() {
+                    file_text.text = match &file_select_widget.result {
+                        Some(result) => result.to_string(),
+                        None => file_text.text.to_string(),
+                    };
+                }
+            }
 
             /*let search_text = match &search_file.text.trim().len() {
                 0 => None,
@@ -393,45 +422,17 @@ pub fn main() {
                 search_text,
             );*/
 
-            file_select_widget.draw(
-                &mut canvas,
-                &texture_creator,
-                Some(mouse_position),
-                &mut font,
-            );
-
-            components_drawn = true;
+            file_select_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
 
             /*------- File Selection Menu -------*/
         } else {
+            file_select_widget.change_drawn(false);
+            file_select_widget.change_active(false);
             /*------ Board Editing Components ------*/
-            if components_drawn {
-                board_control_widget.draw(
-                    &mut canvas,
-                    &texture_creator,
-                    Some(mouse_position),
-                    &mut font,
-                );
-            } else {
-                directory_buttons
-                    .iter_mut()
-                    .for_each(|a: &mut Box<dyn ValidDropdownOption>| {
-                        a.change_active(false);
-                    });
 
-                board_control_widget.change_active(true);
+            board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
 
-                canvas.set_draw_color(PRIMARY_COLOR);
-                canvas.clear();
-                game_board.draw(&mut canvas);
-                board_control_widget.draw(
-                    &mut canvas,
-                    &texture_creator,
-                    Some(mouse_position),
-                    &mut font,
-                );
-                components_drawn = true;
-            }
+            board_control_widget.change_active(true);
         }
         /*------ Board Editing Components ------*/
 
@@ -443,37 +444,45 @@ pub fn main() {
                 let (clicked_button, (_, inner_button_clicked)) =
                     save_widget.on_click(mouse_position);
                 match clicked_button {
-                    Some(id) => match id.as_str() {
-                        "Save_Wid_Exit" => {
-                            save_file = false;
-                            components_drawn = false;
-                        }
-                        "Save_Wid_Save" => {
-                            fileDialog::save_file(
-                                save_widget.get_result().expect("No path given"),
-                                game_board.map_json(),
-                            );
-                            save_file = false;
-                            components_drawn = false;
-                        }
-                        "Save_File_Exp" => {
-                            if inner_button_clicked.is_some() {
-                                if let Some(file_exp) = save_widget.buttons.get_mut("Save_File_Exp")
-                                {
-                                    if let Some(button) =
-                                        file_exp.as_any().downcast_mut::<FileExplorer>()
-                                    {
-                                        let new_result = inner_button_clicked.expect("Nope");
+                    Some(id) => {
+                        save_widget.change_drawn(false);
+                        match id.as_str() {
+                            "Save_Wid_Exit" => {
+                                save_file = false;
 
-                                        button.change_display(new_result.clone());
-                                        save_widget.change_result(Some(new_result));
+                                save_widget.change_active(false);
+                                save_widget.change_result(Some(home_dir.clone()));
+                            }
+                            "Save_Wid_Save" => {
+                                fileDialog::save_file(
+                                    save_widget.get_result().expect("No path given"),
+                                    game_board.map_json(),
+                                );
+                                save_file = false;
+
+                                save_widget.change_active(false);
+                                save_widget.change_result(Some(home_dir.clone()));
+                            }
+                            "Save_File_Exp" => {
+                                if inner_button_clicked.is_some() {
+                                    if let Some(file_exp) =
+                                        save_widget.buttons.get_mut("Save_File_Exp")
+                                    {
+                                        if let Some(button) =
+                                            file_exp.as_any().downcast_mut::<FileExplorer>()
+                                        {
+                                            let new_result = inner_button_clicked.expect("Nope");
+
+                                            button.change_display(new_result.clone());
+                                            save_widget.change_result(Some(new_result));
+                                        }
                                     }
                                 }
+                                ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
                             }
-                            ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
+                            _ => {}
                         }
-                        _ => {}
-                    },
+                    }
                     None => {}
                 };
             }
@@ -495,7 +504,6 @@ pub fn main() {
                             canvas.clear();
                             game_board.draw(&mut canvas);
                             select_file = true;
-                            components_drawn = false;
                             ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
                         }
                         "Save Map" => {
@@ -505,7 +513,7 @@ pub fn main() {
                             save_widget.draw(
                                 &mut canvas,
                                 &texture_creator,
-                                Some(mouse_position),
+                                mouse_position,
                                 &mut font,
                             );
                         }
@@ -534,69 +542,73 @@ pub fn main() {
                 let (clicked_button, (_, inner_button_clicked)) =
                     file_select_widget.on_click(mouse_position);
                 match clicked_button {
-                    Some(button) => match button.as_str() {
-                        "Search_File" => {
-                            video_subsystem.text_input().start();
-                        }
-                        "Select_File_Exp" => {
-                            if inner_button_clicked.is_some() {
-                                if let Some(file_exp) =
-                                    file_select_widget.buttons.get_mut("Select_File_Exp")
-                                {
-                                    if let Some(button) =
-                                        file_exp.as_any().downcast_mut::<FileExplorer>()
+                    Some(button) => {
+                        file_select_widget.change_drawn(false);
+                        match button.as_str() {
+                            "Search_File" => {
+                                video_subsystem.text_input().start();
+                            }
+                            "Select_File_Exp" => {
+                                if inner_button_clicked.is_some() {
+                                    if let Some(file_exp) =
+                                        file_select_widget.buttons.get_mut("Select_File_Exp")
                                     {
-                                        let new_result = inner_button_clicked.expect("Nope");
+                                        if let Some(button) =
+                                            file_exp.as_any().downcast_mut::<FileExplorer>()
+                                        {
+                                            let new_result = inner_button_clicked.expect("Nope");
 
-                                        button.change_display(new_result.clone());
-                                        save_widget.change_result(Some(new_result.clone()));
-                                        if !fileDialog::is_directory(&new_result) {
-                                            let (
-                                                obstacle_map,
-                                                player_map,
-                                                enemy_map,
-                                                tile_amount_x,
-                                                tile_amount_y,
-                                            ) = fileDialog::parse_map_file(fileDialog::read_file(
-                                                &new_result,
-                                            ));
-                                            game_board = Board {
-                                                location: game_board.location,
-                                                width: game_board.width,
-                                                height: game_board.height,
-                                                tile_amount_x,
-                                                tile_amount_y,
-                                                enemy_pos: enemy_map,
-                                                player_pos: player_map,
-                                                obstacles: obstacle_map,
-                                                active: game_board.active,
-                                                id: game_board.id,
-                                                selected_piece_type: game_board.selected_piece_type,
-                                            };
-                                            game_board.draw(&mut canvas);
-                                            select_file = false;
-                                            components_drawn = false;
-                                            ::std::thread::sleep(Duration::new(
-                                                0,
-                                                1_000_000_000u32 / 15,
-                                            ));
+                                            button.change_display(new_result.clone());
+                                            save_widget.change_result(Some(new_result.clone()));
+                                            if !fileDialog::is_directory(&new_result) {
+                                                let (
+                                                    obstacle_map,
+                                                    player_map,
+                                                    enemy_map,
+                                                    tile_amount_x,
+                                                    tile_amount_y,
+                                                ) = fileDialog::parse_map_file(
+                                                    fileDialog::read_file(&new_result),
+                                                );
+                                                game_board = Board {
+                                                    location: game_board.location,
+                                                    width: game_board.width,
+                                                    height: game_board.height,
+                                                    tile_amount_x,
+                                                    tile_amount_y,
+                                                    enemy_pos: enemy_map,
+                                                    player_pos: player_map,
+                                                    obstacles: obstacle_map,
+                                                    active: game_board.active,
+                                                    id: game_board.id,
+                                                    selected_piece_type: game_board
+                                                        .selected_piece_type,
+                                                };
+                                                game_board.draw(&mut canvas);
+                                                select_file = false;
+
+                                                ::std::thread::sleep(Duration::new(
+                                                    0,
+                                                    1_000_000_000u32 / 15,
+                                                ));
+                                            }
                                         }
                                     }
                                 }
+                                ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
                             }
-                            ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
+                            "Back" => {
+                                file_select_widget.change_active(false);
+                                canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                canvas.clear();
+                                game_board.draw(&mut canvas);
+                                select_file = false;
+
+                                ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
+                            }
+                            _ => {}
                         }
-                        "Back" => {
-                            file_select_widget.change_active(false);
-                            canvas.set_draw_color(Color::RGB(87, 87, 81));
-                            canvas.clear();
-                            game_board.draw(&mut canvas);
-                            select_file = false;
-                            components_drawn = false;
-                            ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
-                        }
-                        _ => {}
-                    },
+                    }
                     None => {}
                 }
 
@@ -691,6 +703,19 @@ pub fn main() {
                     ..
                 } => {
                     if video_subsystem.text_input().is_active() {
+                        if file_select_widget.is_active() {
+                            if let Some(file_exp) =
+                                file_select_widget.buttons.get_mut("Select_File_Exp")
+                            {
+                                if let Some(button) =
+                                    file_exp.as_any().downcast_mut::<FileExplorer>()
+                                {
+                                    button.change_filter(file_select_widget.result.clone());
+                                }
+                            }
+                            file_select_widget.change_drawn(false);
+                        }
+
                         video_subsystem.text_input().stop()
                     }
                 }
@@ -700,13 +725,14 @@ pub fn main() {
                 } => {
                     if video_subsystem.text_input().is_active() {
                         if file_select_widget.is_active() {
-                            if let Some(text_box) =
-                                file_select_widget.buttons.get_mut("Search_File")
-                            {
-                                if let Some(text) = text_box.as_any().downcast_mut::<InputBox>() {
-                                    text.text.pop();
+                            file_select_widget.result = match file_select_widget.result {
+                                Some(mut tex) => {
+                                    tex.pop();
+                                    Some(tex)
                                 }
-                            }
+                                None => file_select_widget.result,
+                            };
+                            file_select_widget.change_drawn(false);
                         }
                     }
                 }
@@ -714,15 +740,11 @@ pub fn main() {
                 Event::TextInput { text, .. } => {
                     if video_subsystem.text_input().is_active() {
                         if file_select_widget.is_active() {
-                            if let Some(text_box) =
-                                file_select_widget.buttons.get_mut("Search_File")
-                            {
-                                if let Some(file_text) =
-                                    text_box.as_any().downcast_mut::<InputBox>()
-                                {
-                                    file_text.text += &text;
-                                }
-                            }
+                            file_select_widget.result = match file_select_widget.result {
+                                Some(tex) => Some(tex + &text),
+                                None => Some(text),
+                            };
+                            file_select_widget.change_drawn(false);
                         }
                     }
                 }
