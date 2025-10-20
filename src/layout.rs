@@ -5,7 +5,7 @@ use sdl2::rect::Point;
 use crate::components::{button::*, inputbox::*, Component};
 
 pub fn layout_root(
-    buttons: &mut Vec<Box<dyn ValidDropdownOption>>,
+    buttons: &mut Vec<StandardButton>,
     origin: Point,
     width: u32,
     height: u32,
