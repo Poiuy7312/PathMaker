@@ -4,9 +4,11 @@ use sdl2::rect::{Point, Rect};
 use sdl2::render::{Canvas, TextureCreator};
 use sdl2::ttf;
 use sdl2::video::{Window, WindowContext};
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
+use crate::components::file_explorer::FileExplorer;
+use crate::components::inputbox::InputBox;
 use crate::components::{button::*, Component};
 
 use crate::colors::*;
@@ -21,6 +23,7 @@ pub struct Widget {
     pub active: bool,
     pub buttons: HashMap<&'static str, Box<dyn Interface>>,
     pub layout: Vec<Vec<&'static str>>,
+    pub drawn: bool,
 }
 
 impl Widget {
@@ -44,6 +47,20 @@ impl Widget {
         self.id.to_string()
     }
 
+    pub fn change_drawn(&mut self, new_val: bool) {
+        self.drawn = new_val;
+        for b in self.buttons.values_mut() {
+            b.change_drawn(new_val);
+        }
+    }
+
+    pub fn get_mut_button(&mut self, id: &str) -> Option<&mut dyn Any> {
+        if let Some(button) = self.buttons.get_mut(id) {
+            return Some(button.as_any());
+        }
+        return None;
+    }
+
     pub fn widget_result(&mut self) {}
 
     pub fn change_location(&mut self, new_location: Point) {
@@ -56,6 +73,7 @@ impl Widget {
 
     pub fn change_active(&mut self, new_value: bool) {
         self.active = new_value;
+
         self.buttons
             .iter_mut()
             .for_each(|(_, a)| a.change_active(new_value));
@@ -156,21 +174,24 @@ impl Widget {
         &mut self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Option<Point>,
+        mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        let rectangle = self.get_rect();
-        let outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);
-        canvas.set_draw_color(BLACK);
-        canvas.fill_rect(outline).unwrap();
-        canvas.set_draw_color(SECONDARY_COLOR);
-        canvas.fill_rect(rectangle).unwrap();
+        if !self.drawn {
+            let rectangle = self.get_rect();
+            let outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);
+            canvas.set_draw_color(BLACK);
+            canvas.fill_rect(outline).unwrap();
+            canvas.set_draw_color(SECONDARY_COLOR);
+            canvas.fill_rect(rectangle).unwrap();
+            self.drawn = true;
+        }
 
         self.set_widget_layout();
 
         self.buttons.iter_mut().for_each(|(_, a)| {
             a.change_active(self.active);
-            a.draw(canvas, texture_creator, mouse_state, font)
+            a.draw(canvas, texture_creator, mouse_state, font);
         });
     }
 }
