@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use sdl2::mouse::MouseState;
@@ -8,6 +9,7 @@ use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::sys::False;
 use sdl2::video::{Window, WindowContext};
 
+use crate::colors::{BLACK, HOVER_COLOR, WHITE};
 use crate::components::Component;
 
 use sdl2::ttf;
@@ -48,6 +50,7 @@ pub trait ValidDropdownOption: Interface {
     fn get_options(self: Box<Self>) -> Option<Vec<Box<dyn ValidDropdownOption>>>;
 }
 
+#[derive(Clone)]
 /// Stores Color values to style buttons
 pub struct InterfaceStyle {
     pub text_color: Color,
@@ -502,8 +505,10 @@ pub struct OptionButton {
     pub location: Point,
     pub id: String,
     pub active: bool,
-    pub options: Vec<(String, StandardButton)>,
-    drawn: bool,
+    pub options: RefCell<Vec<(String, StandardButton)>>,
+    active_option: Option<String>,
+    defaults: HashMap<String, InterfaceStyle>,
+    pub drawn: bool,
 }
 
 impl Component for OptionButton {
@@ -513,10 +518,12 @@ impl Component for OptionButton {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         match self
             .options
-            .iter()
+            .borrow_mut()
+            .iter_mut()
             .find(|(_, a)| a.get_rect(a.location).contains_point(mouse_position))
         {
             Some((_, clicked_button)) => {
+                self.active_option = Some(clicked_button.get_id());
                 return (true, Some(clicked_button.get_id()));
             }
             None => return (false, None),
@@ -525,6 +532,7 @@ impl Component for OptionButton {
 
     fn mouse_over_component(&self, mouse_position: Point) -> bool {
         self.options
+            .borrow()
             .iter()
             .find(|(_, a)| a.get_rect(a.location).contains_point(mouse_position))
             .is_some()
@@ -534,7 +542,7 @@ impl Component for OptionButton {
     fn change_location(&mut self, new_location: Point) {
         let mut count = 0;
         self.location = new_location;
-        self.options.iter_mut().for_each(|(_, b)| {
+        self.options.borrow_mut().iter_mut().for_each(|(_, b)| {
             b.change_location(Point::new(
                 new_location.x() + count * b.width as i32,
                 new_location.y(),
@@ -556,7 +564,7 @@ impl Component for OptionButton {
 
     fn change_active(&mut self, new_value: bool) {
         self.active = new_value;
-        self.options.iter_mut().for_each(|(_, a)| {
+        self.options.borrow_mut().iter_mut().for_each(|(_, a)| {
             a.change_active(new_value);
         })
     }
@@ -597,7 +605,18 @@ impl Interface for OptionButton {
         font: &mut ttf::Font<'_, 'static>,
     ) {
         // Draw each button in the switch
-        self.options.iter().for_each(|(_, b)| {
+        self.options.borrow_mut().iter_mut().for_each(|(_, b)| {
+            if let Some(ac_option) = &self.active_option {
+                if b.get_id() == *ac_option {
+                    b.background_color = HOVER_COLOR;
+                    b.text_color = BLACK;
+                } else {
+                    if let Some(default) = &self.defaults.get(&b.get_id()) {
+                        b.background_color = default.background_color;
+                        b.text_color = default.text_color;
+                    }
+                }
+            }
             b.draw(canvas, texture_creator, mouse_state, font);
         })
     }
@@ -614,9 +633,11 @@ impl OptionButton {
         drawn: bool,
     ) -> Self {
         let mut options: Vec<(String, StandardButton)> = Vec::new();
+        let mut defaults: HashMap<String, InterfaceStyle> = HashMap::new();
         let mut count: i32 = 0;
         let button_width = width / option_values.len() as u32;
         option_values.iter().for_each(|(text, style)| {
+            defaults.insert(text.to_string(), style.clone());
             options.push((
                 text.to_string(),
                 StandardButton {
@@ -641,7 +662,9 @@ impl OptionButton {
             location,
             id,
             active,
-            options,
+            options: RefCell::new(options),
+            active_option: None,
+            defaults,
             drawn,
         }
     }
