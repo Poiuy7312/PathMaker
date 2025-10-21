@@ -63,9 +63,6 @@ pub fn main() {
     let controls_width = window_width * 1 / 6;
     //= Rect::new(998, 0, 1000, 1000);
 
-    let mut directory_buttons: Vec<Box<dyn ValidDropdownOption>> =
-        util::walk_tree(&directory_tree, window_width);
-
     let directories: HashMap<String, (StandardButton, Vec<String>)> =
         util::get_dir_map(&directory_tree, window_width);
 
@@ -83,6 +80,19 @@ pub fn main() {
         height: 0,
         width: 0,
         id: String::from("Display"),
+        location: Point::new(0, 0),
+        drawn: false,
+    });
+
+    let save_widget_name: Box<dyn Interface> = Box::new(InputBox {
+        default_text: "File Name".to_string(),
+        text: "test.json".to_string(),
+        active: false,
+        text_color: WHITE,
+        background_color: PRIMARY_COLOR,
+        height: 0,
+        width: 0,
+        id: String::from("File_Name"),
         location: Point::new(0, 0),
         drawn: false,
     });
@@ -239,14 +249,20 @@ pub fn main() {
 
     let save_layout: Vec<Vec<&'static str>> = vec![
         vec!["Display", "Display"],
+        vec!["File_Name", "File_Name"],
         vec!["Save_File_Exp", "Save_File_Exp"],
         vec!["Save_File_Exp", "Save_File_Exp"],
         vec!["Save_File_Exp", "Save_File_Exp"],
+        vec!["Save_File_Exp", "Save_File_Exp"],
+        vec!["Save_File_Exp", "Save_File_Exp"],
+        vec!["Save_File_Exp", "Save_File_Exp"],
+        vec!["Save_Wid_Save", "Save_Wid_Exit"],
         vec!["Save_Wid_Save", "Save_Wid_Exit"],
     ];
 
     let save_widget_buttons: HashMap<&'static str, Box<dyn Interface>> = HashMap::from([
         ("Display", save_widget_display),
+        ("File_Name", save_widget_name),
         ("Save_File_Exp", save_widget_directories),
         ("Save_Wid_Save", save_widget_accept),
         ("Save_Wid_Exit", save_widget_exit),
@@ -449,9 +465,9 @@ pub fn main() {
                         match id.as_str() {
                             "Save_Wid_Exit" => {
                                 save_file = false;
-
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
+                                game_board.draw(&mut canvas);
                             }
                             "Save_Wid_Save" => {
                                 fileDialog::save_file(
@@ -459,9 +475,9 @@ pub fn main() {
                                     game_board.map_json(),
                                 );
                                 save_file = false;
-
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
+                                game_board.draw(&mut canvas);
                             }
                             "Save_File_Exp" => {
                                 if inner_button_clicked.is_some() {
