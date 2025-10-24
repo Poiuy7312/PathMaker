@@ -10,6 +10,7 @@ use sdl2::video::{Window, WindowContext};
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::iter;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -57,22 +58,38 @@ impl Interface for FileExplorer {
     ) {
         let mut button_list: Vec<String> = Vec::new();
 
+        let mut display: String;
+
         if !self.drawn {
             match &self.filter {
-                Some(filter) => self
-                    .directories
-                    .borrow()
-                    .iter()
-                    .filter(|(_, (b, _))| b.text.contains(filter))
-                    .for_each(|(k, _)| {
-                        button_list.push(k.to_string());
-                    }),
-                None => {
-                    if let Some(buttons) = self.directories.borrow().get(&self.current_display) {
-                        for id in &buttons.1 {
-                            button_list.push(id.clone());
-                        }
+                Some(filter) => match filter.ends_with(&['/', '\\']) {
+                    true => {
+                        display = filter.trim().to_string();
+                        display.pop();
                     }
+                    false => {
+                        display = filter
+                            .trim()
+                            .chars()
+                            .rev()
+                            .skip_while(|a| a != &'/' || a != &'\\')
+                            .collect();
+                        display.pop();
+                    }
+                },
+                None => {
+                    display = self.current_display.to_string();
+                }
+            }
+            println!("{}", display);
+
+            if let Some(buttons) = self.directories.borrow().get(&display) {
+                for id in &buttons.1 {
+                    button_list.push(id.to_string());
+                }
+            } else if let Some(buttons) = self.directories.borrow().get(&self.current_display) {
+                for id in &buttons.1 {
+                    button_list.push(id.to_string());
                 }
             }
 
