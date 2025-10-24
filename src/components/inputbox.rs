@@ -27,7 +27,9 @@ pub struct InputBox {
 impl Component for InputBox {
     fn on_click(&mut self, mouse_state: Point) -> (bool, Option<String>) {
         if self.mouse_over_component(mouse_state) {
-            self.text = " ".to_string();
+            if self.text.len() == 0 {
+                self.text = " ".to_string();
+            }
             self.active = true;
             return (true, Some(self.get_id()));
         }
