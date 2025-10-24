@@ -280,9 +280,9 @@ pub fn main() {
         drawn: false,
     };
 
-    let mut search_file: Box<dyn Interface> = Box::new(InputBox {
+    let search_file: Box<dyn Interface> = Box::new(InputBox {
         default_text: "Search File".to_string(),
-        text: "".to_string(),
+        text: home_dir.to_string(),
         active: false,
         text_color: TERTIARY_COLOR,
         background_color: PRIMARY_COLOR,
@@ -299,8 +299,8 @@ pub fn main() {
         height: 0,
         width: 0,
         directories: RefCell::new(directories),
-        default_dir: home_dir.clone(),
-        current_display: home_dir.clone(),
+        default_dir: home_dir.to_string(),
+        current_display: home_dir.to_string(),
         filter: None,
         active: false,
         drawn: false,
@@ -339,7 +339,7 @@ pub fn main() {
     let mut file_select_widget: Widget = Widget {
         location: Point::new(window_width as i32 * 5 / 6, 0),
         id: String::from("Board_Control"),
-        result: None,
+        result: Some(home_dir.to_string()),
         height: window_height,
         width: controls_width,
         active: false,
@@ -727,6 +727,7 @@ pub fn main() {
                                     file_exp.as_any().downcast_mut::<FileExplorer>()
                                 {
                                     button.change_filter(file_select_widget.result.clone());
+                                    println!("{:#?}", button.filter);
                                 }
                             }
                             file_select_widget.change_drawn(false);
