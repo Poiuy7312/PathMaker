@@ -155,13 +155,12 @@ impl Widget {
                             found_components.get_mut(self.layout[row][col])
                         {
                             if &col > width {
-                                *width = col;
-
-                                component.change_width((*width as u32 + 1) * cell_width);
+                                component
+                                    .change_width((col as u32 - *width as u32 + 1) * cell_width);
                             }
                             if &row > height {
-                                *height = row;
-                                component.change_height((*height as u32) * cell_height);
+                                component
+                                    .change_height((row as u32 - *height as u32 + 1) * cell_height);
                             }
                         }
                     }
