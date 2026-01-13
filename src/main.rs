@@ -1,9 +1,11 @@
 extern crate sdl2;
 use sdl2::event::Event;
 use sdl2::gfx;
+use sdl2::image::LoadSurface;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
+use sdl2::surface::Surface;
 use sdl2::ttf;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -20,28 +22,39 @@ mod fileDialog;
 
 mod layout;
 
+mod settings;
 mod util;
 
 use crate::colors::*;
+
 use crate::components::file_explorer::FileExplorer;
 use crate::components::{board::*, button::*, inputbox::*, widget::*, Component};
+use crate::settings::GameSettings;
 
 pub fn main() {
-    const BOARD_WIDTH: u32 = 800;
-    const BOARD_HEIGHT: u32 = 800;
-    let window_width: u32 = 1200;
-    let window_height: u32 = 800;
-    const TILES_X: u32 = 40;
-    const TILES_Y: u32 = 40;
+    // Load settings at startup
+    let settings_path = GameSettings::get_default_path();
+    let mut settings =
+        GameSettings::load(&settings_path).unwrap_or_else(|_| GameSettings::default());
+
+    // Use settings values
+    let board_width: u32 = settings.board_width;
+    let board_height: u32 = settings.board_height;
+    let window_width: u32 = settings.window_width;
+    let window_height: u32 = settings.window_height;
+    let tiles_x: u32 = settings.tiles_x; // Replace with settings.tiles_x
+    let tiles_y: u32 = settings.tiles_y;
     let sdl_context = sdl2::init().unwrap();
 
     let video_subsystem = sdl_context.video().unwrap();
     video_subsystem.text_input().stop();
-    let window = video_subsystem
+    let mut window = video_subsystem
         .window("PathMaker demo", window_width, window_height)
         .position_centered()
         .build()
         .expect("Failed to render Window");
+    let window_icon = Surface::from_file("src/assets/Icon.svg").unwrap();
+    window.set_icon(window_icon);
     let mut canvas = window.into_canvas().build().unwrap();
 
     let texture_creator = canvas.texture_creator();
@@ -52,24 +65,108 @@ pub fn main() {
     let ttf_context: ttf::Sdl2TtfContext = ttf::init().unwrap();
 
     let mut font: ttf::Font<'_, 'static> = ttf_context
-        .load_font(
-            "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf",
-            124,
-        )
+        .load_font("src/assets/open-sans/OpenSans-Semibold.ttf", 124)
         .expect("Unable to Load Font");
 
     /*----- File Explorer Components ----- */
 
-    let controls_width = window_width * 1 / 6;
+    let controls_width = window_width * 1 / 5;
     //= Rect::new(998, 0, 1000, 1000);
 
     let directories: HashMap<String, (StandardButton, Vec<String>)> =
         util::get_dir_map(&directory_tree, window_width);
 
-    let filtered_directories: HashMap<String, (StandardButton, Vec<String>)> = directories
-        .clone()
-        .extract_if(|k, _| fileDialog::is_directory(k))
-        .collect();
+    let filtered_directories: HashMap<String, (StandardButton, Vec<String>)> =
+        util::get_dir_map(&directory_tree, window_width)
+            .extract_if(|k, _| fileDialog::is_directory(k))
+            .collect();
+
+    let path_selector: Box<dyn Interface> = {
+        Box::new(Dropdown {
+            height: 30,
+            width: controls_width,
+            location: Point::new(0, 0),
+            text_color: WHITE,
+            background_color: PRIMARY_COLOR,
+            hover: RefCell::new(false),
+            text: "Select Path-finding Algorithm".to_string(),
+            id: "Path_Selector".to_string(),
+            active: false,
+            clicked_on: false,
+            options: RefCell::from(vec![
+                StandardButton {
+                    height: 0,
+                    width: 0,
+                    location: Point::new(0, 0),
+                    text_color: WHITE,
+                    background_color: PRIMARY_COLOR,
+                    hover: RefCell::new(false),
+                    text: "Breadth First Search".to_string(),
+                    id: "bfsearch".to_string(),
+                    filter: None,
+                    active: false,
+                    drawn: RefCell::new(false),
+                    cached_texture: None,
+                },
+                StandardButton {
+                    height: 0,
+                    width: 0,
+                    location: Point::new(0, 0),
+                    text_color: WHITE,
+                    background_color: PRIMARY_COLOR,
+                    hover: RefCell::new(false),
+                    text: "A* search".to_string(),
+                    id: "A-star".to_string(),
+                    filter: None,
+                    active: false,
+                    drawn: RefCell::new(false),
+                    cached_texture: None,
+                },
+            ]),
+            filter: None,
+            drawn: RefCell::new(false),
+        })
+    };
+
+    let DG_Check: Box<dyn Interface> = Box::new(CheckBox {
+        label: "Dynamic Generation".to_string(),
+        checked: false,
+        location: Point::new(40, 40),
+        size: 10,
+        id: "DG_Select".to_string(),
+        active: true,
+        drawn: RefCell::new(false),
+    });
+
+    let DE_Check: Box<dyn Interface> = Box::new(CheckBox {
+        label: "Doubling Experiment".to_string(),
+        checked: false,
+        location: Point::new(40, 40),
+        size: 10,
+        id: "DE_Select".to_string(),
+        active: true,
+        drawn: RefCell::new(false),
+    });
+
+    let MA_Check: Box<dyn Interface> = Box::new(CheckBox {
+        label: "Multiple Agents".to_string(),
+        checked: false,
+        location: Point::new(40, 40),
+        size: 10,
+        id: "MA_Select".to_string(),
+        active: true,
+        drawn: RefCell::new(false),
+    });
+
+    let MG_Check: Box<dyn Interface> = Box::new(CheckBox {
+        label: "Multiple Goals".to_string(),
+        checked: false,
+        location: Point::new(40, 40),
+        size: 10,
+        id: "MG_Select".to_string(),
+        active: true,
+        drawn: RefCell::new(false),
+    });
 
     let save_widget_display: Box<dyn Interface> = Box::new(InputBox {
         default_text: "Chosen_Directory".to_string(),
@@ -81,7 +178,7 @@ pub fn main() {
         width: 0,
         id: String::from("Display"),
         location: Point::new(0, 0),
-        drawn: false,
+        drawn: RefCell::new(false),
     });
 
     let save_widget_name: Box<dyn Interface> = Box::new(InputBox {
@@ -94,7 +191,7 @@ pub fn main() {
         width: 0,
         id: String::from("File_Name"),
         location: Point::new(0, 0),
-        drawn: false,
+        drawn: RefCell::new(false),
     });
 
     let home_dir = directory_tree.path.to_string_lossy().to_string();
@@ -109,7 +206,7 @@ pub fn main() {
         current_display: home_dir.clone(),
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
     });
 
     let save_widget_accept: Box<dyn Interface> = Box::new(StandardButton {
@@ -118,12 +215,13 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: WHITE,
         background_color: PRIMARY_COLOR,
-        hover_color: QUATERNARY_COLOR,
+        hover: RefCell::new(false),
         text: String::from("Save"),
         id: String::from("Save_Wid_Save"),
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
+        cached_texture: None,
     });
 
     let save_widget_exit: Box<dyn Interface> = Box::new(StandardButton {
@@ -132,12 +230,13 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: WHITE,
         background_color: PRIMARY_COLOR,
-        hover_color: QUATERNARY_COLOR,
+        hover: RefCell::new(false),
         text: String::from("Exit"),
         id: String::from("Save_Wid_Exit"),
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
+        cached_texture: None,
     });
 
     /*----- File Explorer Components ----- */
@@ -148,12 +247,13 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: WHITE,
         background_color: PRIMARY_COLOR,
-        hover_color: HOVER_COLOR,
+        hover: RefCell::new(false),
         text: "START".to_string(),
         id: String::from("START"),
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
+        cached_texture: None,
     });
 
     let piece_select: Box<dyn Interface> = Box::new(OptionButton::new(
@@ -168,7 +268,6 @@ pub fn main() {
                 InterfaceStyle {
                     text_color: BLACK,
                     background_color: GREEN,
-                    hover_color: HOVER_COLOR,
                 },
             ),
             (
@@ -176,7 +275,6 @@ pub fn main() {
                 InterfaceStyle {
                     text_color: BLACK,
                     background_color: RED,
-                    hover_color: HOVER_COLOR,
                 },
             ),
             (
@@ -184,7 +282,6 @@ pub fn main() {
                 InterfaceStyle {
                     text_color: WHITE,
                     background_color: BLACK,
-                    hover_color: HOVER_COLOR,
                 },
             ),
         ],
@@ -197,13 +294,13 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: WHITE,
         background_color: PRIMARY_COLOR,
-        hover_color: HOVER_COLOR,
+        hover: RefCell::new(false),
         text: "Upload Map".to_string(),
         id: String::from("Upload Map"),
-
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
+        cached_texture: None,
     });
 
     let save_map_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -212,31 +309,45 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: WHITE,
         background_color: PRIMARY_COLOR,
-        hover_color: HOVER_COLOR,
+        hover: RefCell::new(false),
         text: "Save Map".to_string(),
         id: String::from("Save Map"),
-
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
+        cached_texture: None,
     });
 
     let board_control_layout: Vec<Vec<&'static str>> = vec![
         vec!["Upload Map"],
+        vec!["Upload Map"],
+        vec!["Save Map"],
         vec!["Save Map"],
         vec!["Piece_Select"],
+        vec!["Path_Selector"],
+        vec!["DG_Select"],
+        vec!["DE_Select"],
+        vec!["MA_Select"],
+        vec!["MG_Select"],
+        vec!["START"],
         vec!["START"],
     ];
 
+    // Tells a widget what buttons to draw.
     let board_control_buttons = HashMap::from([
         ("Upload Map", upload_map_button),
         ("Save Map", save_map_button),
         ("START", start_board_button),
+        ("DG_Select", DG_Check),
+        ("DE_Select", DE_Check),
+        ("MA_Select", MA_Check),
+        ("MG_Select", MG_Check),
+        ("Path_Selector", path_selector),
         ("Piece_Select", piece_select),
     ]);
 
     let mut board_control_widget: Widget = Widget {
-        location: Point::new(window_width as i32 * 5 / 6, 0),
+        location: Point::new(window_width as i32 * 4 / 5, 0),
         id: String::from("Board_Control"),
         result: None,
         height: window_height,
@@ -245,6 +356,8 @@ pub fn main() {
         buttons: board_control_buttons,
         layout: board_control_layout,
         drawn: false,
+        cached_draw_order: None,
+        cached_interface_location: None,
     };
 
     let save_layout: Vec<Vec<&'static str>> = vec![
@@ -269,28 +382,30 @@ pub fn main() {
     ]);
 
     let mut save_widget = Widget {
-        location: Point::new(200, 60),
+        location: Point::new(window_width as i32 * 1 / 4, 0),
         id: String::from("SAVE_WIDGET"),
         result: Some(home_dir.clone()),
-        height: 300,
-        width: 500,
+        height: window_height / 2,
+        width: window_width / 2,
         buttons: save_widget_buttons,
         layout: save_layout,
         active: false,
         drawn: false,
+        cached_draw_order: None,
+        cached_interface_location: None,
     };
 
     let search_file: Box<dyn Interface> = Box::new(InputBox {
         default_text: "Search File".to_string(),
         text: home_dir.to_string(),
         active: false,
-        text_color: TERTIARY_COLOR,
+        text_color: WHITE,
         background_color: PRIMARY_COLOR,
         height: 50,
         width: 200,
         id: String::from("Search_File"),
         location: Point::new(window_width as i32 - 200, 1),
-        drawn: false,
+        drawn: RefCell::new(false),
     });
 
     let select_file_explorer: Box<dyn Interface> = Box::new(FileExplorer {
@@ -303,7 +418,7 @@ pub fn main() {
         current_display: home_dir.to_string(),
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
     });
 
     let go_back_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -312,12 +427,13 @@ pub fn main() {
         location: Point::new(window_width as i32 - 200, window_height as i32 - 25),
         text_color: BLACK,
         background_color: SECONDARY_COLOR,
-        hover_color: HOVER_COLOR,
+        hover: RefCell::new(false),
         text: "Back".to_string(),
         id: String::from("Back"),
         filter: None,
         active: false,
-        drawn: false,
+        drawn: RefCell::new(false),
+        cached_texture: None,
     });
 
     let file_select_layout: Vec<Vec<&'static str>> = vec![
@@ -337,37 +453,33 @@ pub fn main() {
     ]);
 
     let mut file_select_widget: Widget = Widget {
-        location: Point::new(window_width as i32 * 5 / 6, 0),
+        location: Point::new(window_width as i32 * 1 / 4, 0),
         id: String::from("Board_Control"),
         result: Some(home_dir.to_string()),
-        height: window_height,
-        width: controls_width,
+        height: window_height / 2,
+        width: window_width / 2,
         active: false,
         buttons: file_select_buttons,
         layout: file_select_layout,
         drawn: false,
+        cached_draw_order: None,
+        cached_interface_location: None,
     };
 
-    /*----- File Explorer Components ----- */
-
-    let player_pos = HashSet::new();
-    let enemy_pos = HashSet::new();
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut game_board: Board = Board {
-        location: Point::new(
-            (window_width as i32 - BOARD_WIDTH as i32) / 2,
-            (window_height as i32 - BOARD_HEIGHT as i32) / 2,
-        ),
-        width: BOARD_WIDTH,
-        height: BOARD_HEIGHT,
-        tile_amount_x: TILES_X,
-        tile_amount_y: TILES_Y,
-        enemy_pos,
-        player_pos,
-        obstacles: HashSet::new(),
+        location: Point::new(0, 0),
+        width: board_width,
+        height: board_height,
+        tile_amount_x: tiles_x,
+        tile_amount_y: tiles_y,
         active: false,
         id: String::from("game_board"),
         selected_piece_type: TileType::Obstacle,
+        cached_background: None,
+        cached_grid: RefCell::new(None),
+        multiple_agents: settings.enable_multiple_agents,
+        multiple_goals: settings.enable_multiple_agents,
     };
 
     canvas.set_draw_color(Color::RGB(87, 87, 81));
@@ -386,8 +498,8 @@ pub fn main() {
             canvas.clear();
 
             game_board.change_location(Point::new(
-                (window_width as i32 - BOARD_WIDTH as i32) / 2,
-                (window_height as i32 - BOARD_HEIGHT as i32) / 2,
+                (window_width as i32 - board_width as i32) / 2,
+                (window_height as i32 - board_height as i32) / 2,
             ));
 
             game_board.draw(&mut canvas);
@@ -395,14 +507,25 @@ pub fn main() {
                 window_width as i32 - board_control_widget.get_width() as i32,
                 board_control_widget.get_location().y(),
             ));
+            board_control_widget.change_drawn(false);
+            file_select_widget.change_location(Point::new(
+                window_width as i32 / 2 - file_select_widget.get_width() as i32 / 2,
+                file_select_widget.get_location().y(),
+            ));
+            file_select_widget.change_drawn(false);
         }
 
         /*-------- Updates User UI Depending on State -------- */
         if save_file {
+            board_control_widget.change_active(false);
+            board_control_widget.change_drawn(false);
             let result = save_widget.get_result();
             if let Some(save_display) = save_widget.buttons.get_mut("Display") {
                 if let Some(display) = save_display.as_any().downcast_mut::<InputBox>() {
-                    display.change_text(result.expect("No path"));
+                    display.text = match &result {
+                        Some(result) => result.to_string(),
+                        None => display.text.to_string(),
+                    };
                 }
             }
 
@@ -416,9 +539,10 @@ pub fn main() {
 
             file_select_widget.change_active(true);
 
+            let result = file_select_widget.get_result();
             if let Some(text_box) = file_select_widget.buttons.get_mut("Search_File") {
                 if let Some(file_text) = text_box.as_any().downcast_mut::<InputBox>() {
-                    file_text.text = match &file_select_widget.result {
+                    file_text.text = match &result {
                         Some(result) => result.to_string(),
                         None => file_text.text.to_string(),
                     };
@@ -463,6 +587,9 @@ pub fn main() {
                     Some(id) => {
                         save_widget.change_drawn(false);
                         match id.as_str() {
+                            "Display" => {
+                                video_subsystem.text_input().start();
+                            }
                             "Save_Wid_Exit" => {
                                 save_file = false;
                                 save_widget.change_active(false);
@@ -470,10 +597,9 @@ pub fn main() {
                                 game_board.draw(&mut canvas);
                             }
                             "Save_Wid_Save" => {
-                                fileDialog::save_file(
-                                    save_widget.get_result().expect("No path given"),
-                                    game_board.map_json(),
-                                );
+                                game_board
+                                    .save_to_file(&save_widget.get_result().expect("No path given"))
+                                    .unwrap();
                                 save_file = false;
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
@@ -494,7 +620,6 @@ pub fn main() {
                                         }
                                     }
                                 }
-                                ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
                             }
                             _ => {}
                         }
@@ -504,23 +629,19 @@ pub fn main() {
             }
 
             if game_board.on_click(mouse_position).0 {
-                println!("Board Clicked On");
                 game_board.draw(&mut canvas);
             } else if !select_file {
                 let (clicked_button, (_, inner_button_clicked)) =
                     board_control_widget.on_click(mouse_position);
-                println!("{:#?}", clicked_button);
                 match clicked_button {
                     Some(name) => match name.as_str() {
                         "START" => {
                             game_board.active = true;
                         }
                         "Upload Map" => {
-                            canvas.set_draw_color(Color::RGB(87, 87, 81));
-                            canvas.clear();
                             game_board.draw(&mut canvas);
+                            game_board.change_active(false);
                             select_file = true;
-                            ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
                         }
                         "Save Map" => {
                             save_file = true;
@@ -550,6 +671,53 @@ pub fn main() {
                             },
                             None => {}
                         },
+                        "DG_Select" => {
+                            if let Some(checkbox) =
+                                board_control_widget.buttons.get_mut("DG_Select")
+                            {
+                                if let Some(cb) = checkbox.as_any().downcast_ref::<CheckBox>() {
+                                    settings.enable_dynamic_generation = cb.checked;
+                                }
+                            }
+                        }
+                        "DE_Select" => {
+                            if let Some(checkbox) =
+                                board_control_widget.buttons.get_mut("DE_Select")
+                            {
+                                if let Some(cb) = checkbox.as_any().downcast_ref::<CheckBox>() {
+                                    settings.enable_doubling_experiment = cb.checked;
+                                }
+                            }
+                        }
+                        "MA_Select" => {
+                            if let Some(checkbox) =
+                                board_control_widget.buttons.get_mut("MA_Select")
+                            {
+                                if let Some(cb) = checkbox.as_any().downcast_ref::<CheckBox>() {
+                                    settings.enable_multiple_agents = cb.checked;
+                                    game_board.multiple_agents = settings.enable_multiple_agents;
+                                }
+                            }
+                        }
+                        "MG_Select" => {
+                            if let Some(checkbox) =
+                                board_control_widget.buttons.get_mut("MG_Select")
+                            {
+                                if let Some(cb) = checkbox.as_any().downcast_ref::<CheckBox>() {
+                                    settings.enable_multiple_goals = cb.checked;
+                                    game_board.multiple_goals = settings.enable_multiple_goals
+                                }
+                            }
+                        }
+                        "Path_Selector" => {
+                            if let Some(dropdown) =
+                                board_control_widget.buttons.get_mut("Path_Selector")
+                            {
+                                if let Some(dd) = dropdown.as_any().downcast_ref::<Dropdown>() {
+                                    settings.selected_algorithm = dd.text.clone();
+                                }
+                            }
+                        }
                         _ => {}
                     },
                     None => {}
@@ -559,7 +727,7 @@ pub fn main() {
                     file_select_widget.on_click(mouse_position);
                 match clicked_button {
                     Some(button) => {
-                        file_select_widget.change_drawn(false);
+                        //file_select_widget.change_drawn(false);
                         match button.as_str() {
                             "Search_File" => {
                                 video_subsystem.text_input().start();
@@ -575,135 +743,34 @@ pub fn main() {
                                             let new_result = inner_button_clicked.expect("Nope");
 
                                             button.change_display(new_result.clone());
-                                            save_widget.change_result(Some(new_result.clone()));
+                                            file_select_widget
+                                                .change_result(Some(new_result.clone()));
                                             if !fileDialog::is_directory(&new_result) {
-                                                let (
-                                                    obstacle_map,
-                                                    player_map,
-                                                    enemy_map,
-                                                    tile_amount_x,
-                                                    tile_amount_y,
-                                                ) = fileDialog::parse_map_file(
+                                                file_select_widget
+                                                    .change_result(Some(home_dir.clone()));
+                                                game_board = game_board.load_board_file(
                                                     fileDialog::read_file(&new_result),
                                                 );
-                                                game_board = Board {
-                                                    location: game_board.location,
-                                                    width: game_board.width,
-                                                    height: game_board.height,
-                                                    tile_amount_x,
-                                                    tile_amount_y,
-                                                    enemy_pos: enemy_map,
-                                                    player_pos: player_map,
-                                                    obstacles: obstacle_map,
-                                                    active: game_board.active,
-                                                    id: game_board.id,
-                                                    selected_piece_type: game_board
-                                                        .selected_piece_type,
-                                                };
-                                                game_board.draw(&mut canvas);
                                                 select_file = false;
-
-                                                ::std::thread::sleep(Duration::new(
-                                                    0,
-                                                    1_000_000_000u32 / 15,
-                                                ));
+                                                game_board.draw(&mut canvas);
                                             }
                                         }
                                     }
                                 }
-                                ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
                             }
                             "Back" => {
                                 file_select_widget.change_active(false);
                                 canvas.set_draw_color(Color::RGB(87, 87, 81));
                                 canvas.clear();
                                 game_board.draw(&mut canvas);
+                                file_select_widget.change_result(Some(home_dir.clone()));
                                 select_file = false;
-
-                                ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
                             }
                             _ => {}
                         }
                     }
                     None => {}
                 }
-
-                /* } else if go_back_button.mouse_over_component(mouse_position) {
-                    file_select_widget.change_active(false);
-                    canvas.set_draw_color(Color::RGB(87, 87, 81));
-                    canvas.clear();
-                    game_board.draw(&mut canvas);
-                    select_file = false;
-                    components_drawn = false;
-                    ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
-                 } else {
-                    // run on_click and relayout if any button handled the click
-                    for b in directory_buttons.iter_mut() {
-                        match b.get_type() {
-                            ValidDropdownType::Standard => {
-                                if b.on_click(mouse_position).0 {
-                                    println!("Clicked ID: {:#?}", b.get_id());
-                                    let (
-                                        obstacle_map,
-                                        player_map,
-                                        enemy_map,
-                                        tile_amount_x,
-                                        tile_amount_y,
-                                    ) = fileDialog::parse_map_file(fileDialog::read_file(
-                                        &b.get_id(),
-                                    ));
-                                    game_board = Board {
-                                        location: game_board.location,
-                                        width: game_board.width,
-                                        height: game_board.height,
-                                        tile_amount_x,
-                                        tile_amount_y,
-                                        enemy_pos: enemy_map,
-                                        player_pos: player_map,
-                                        obstacles: obstacle_map,
-                                        active: game_board.active,
-                                        id: game_board.id,
-                                        selected_piece_type: game_board.selected_piece_type,
-                                    };
-                                    game_board.draw(&mut canvas);
-                                    ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 15));
-                                }
-                            }
-                            ValidDropdownType::Dropdown => {
-                                let (result, clicked_button) = b.on_click(mouse_position);
-                                if result {
-                                    if clicked_button.is_some() {
-                                        println!("Clicked ID: {:#?}", clicked_button);
-                                        let (
-                                            obstacle_map,
-                                            player_map,
-                                            enemy_map,
-                                            tile_amount_x,
-                                            tile_amount_y,
-                                        ) = fileDialog::parse_map_file(fileDialog::read_file(
-                                            &clicked_button.unwrap(),
-                                        ));
-                                        game_board = Board {
-                                            location: game_board.location,
-                                            width: game_board.width,
-                                            height: game_board.height,
-                                            tile_amount_x,
-                                            tile_amount_y,
-                                            enemy_pos: enemy_map,
-                                            player_pos: player_map,
-                                            obstacles: obstacle_map,
-                                            active: game_board.active,
-                                            id: game_board.id,
-                                            selected_piece_type: game_board.selected_piece_type,
-                                        };
-                                        game_board.draw(&mut canvas);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }*/
-                // sleep for short period after input so to prevent accidental double clicks !BANDAID FIX!
             }
         }
         /*-------- Handle Component Inputs -------- */
@@ -727,10 +794,18 @@ pub fn main() {
                                     file_exp.as_any().downcast_mut::<FileExplorer>()
                                 {
                                     button.change_filter(file_select_widget.result.clone());
-                                    println!("{:#?}", button.filter);
                                 }
                             }
                             file_select_widget.change_drawn(false);
+                        } else if save_widget.is_active() {
+                            if let Some(file_exp) = save_widget.buttons.get_mut("Save_File_Exp") {
+                                if let Some(button) =
+                                    file_exp.as_any().downcast_mut::<FileExplorer>()
+                                {
+                                    button.change_filter(save_widget.result.clone());
+                                }
+                            }
+                            save_widget.change_drawn(false);
                         }
 
                         video_subsystem.text_input().stop()
@@ -750,6 +825,15 @@ pub fn main() {
                                 None => file_select_widget.result,
                             };
                             file_select_widget.change_drawn(false);
+                        } else if save_widget.is_active() {
+                            save_widget.result = match save_widget.result {
+                                Some(mut tex) => {
+                                    tex.pop();
+                                    Some(tex)
+                                }
+                                None => save_widget.result,
+                            };
+                            save_widget.change_drawn(false);
                         }
                     }
                 }
@@ -762,6 +846,12 @@ pub fn main() {
                                 None => Some(text),
                             };
                             file_select_widget.change_drawn(false);
+                        } else if save_widget.is_active() {
+                            save_widget.result = match save_widget.result {
+                                Some(tex) => Some(tex + &text),
+                                None => Some(text),
+                            };
+                            save_widget.change_drawn(false);
                         }
                     }
                 }
@@ -778,10 +868,9 @@ pub fn main() {
 
         /*-------- Updates values for board Generation -------- */
 
-        //let obs_y: u32 = rand::thread_rng().gen_range(0..TILES_Y);
-        //let obs_x: u32 = rand::thread_rng().gen_range(0..TILES_X);
+        //let obs_y: u32 = rand::thread_rng().gen_range(0..tiles_y);
+        //let obs_x: u32 = rand::thread_rng().gen_range(0..tiles_x);
         /*-------- Updates values for board Generation -------- */
-
         ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
 }

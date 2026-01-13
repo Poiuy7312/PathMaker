@@ -6,11 +6,13 @@ use sdl2::ttf;
 use sdl2::video::{Window, WindowContext};
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::time::Duration;
 
 use crate::components::file_explorer::FileExplorer;
 use crate::components::inputbox::InputBox;
 use crate::components::{button::*, Component};
 
+/// Add static variant so widget doesn't directly change size of components
 use crate::colors::*;
 
 /// Struct for combining multiple Interface components and formatting them
@@ -24,23 +26,60 @@ pub struct Widget {
     pub buttons: HashMap<&'static str, Box<dyn Interface>>,
     pub layout: Vec<Vec<&'static str>>,
     pub drawn: bool,
+    pub cached_interface_location: Option<HashMap<(i32, i32), &'static str>>,
+    pub cached_draw_order: Option<Vec<&'static str>>,
 }
 
 impl Widget {
     pub fn on_click(&mut self, mouse_state: Point) -> (Option<String>, (bool, Option<String>)) {
-        match self
-            .buttons
-            .iter_mut()
-            .find(|(_, a)| a.mouse_over_component(mouse_state))
-        {
-            Some((_, button)) => {
+        let mut dirty = false;
+        let mut button_found: (Option<String>, (bool, Option<String>)) = (None, (false, None));
+
+        if let Some(cached_map) = &self.cached_interface_location {
+            let rows = self.layout.len() as u32;
+            let cols = self.layout[0].len() as u32;
+            let cell_width = self.width / cols;
+            let cell_height = self.height / rows as u32;
+
+            let relative_x = mouse_state.x() - self.location.x();
+            let relative_y = mouse_state.y() - self.location.y();
+
+            if relative_x < 0 || relative_y < 0 {
+                return button_found;
+            }
+
+            let cell_x = relative_x / cell_width as i32;
+            let cell_y = relative_y / cell_height as i32;
+
+            if cell_x >= cols as i32 || cell_y >= rows as i32 {
+                return button_found;
+            }
+
+            let pos: (i32, i32) = (cell_x, cell_y);
+            println!("{:#?}", pos);
+            if let Some(button_id) = cached_map.get(&pos) {
+                if let Some(button) = self.buttons.get_mut(button_id) {
+                    return (Some(button_id.to_string()), button.on_click(mouse_state));
+                }
+            }
+        }
+        for (_, button) in self.buttons.iter_mut() {
+            if button.mouse_over_component(mouse_state) {
                 let button_id = button.get_id();
-                return (Some(button_id), button.on_click(mouse_state));
+                // Just set drawn to false directly if it was true
+                if button.dirty_parent() {
+                    dirty = true;
+                } else if button.is_drawn() {
+                    button.change_drawn(false);
+                }
+                button_found = (Some(button_id), button.on_click(mouse_state));
+                break;
             }
-            None => {
-                return (None, (false, None));
-            }
-        };
+        }
+        if dirty {
+            self.change_drawn(false);
+        }
+        return button_found;
     }
 
     fn get_id(&self) -> String {
@@ -48,17 +87,12 @@ impl Widget {
     }
 
     pub fn change_drawn(&mut self, new_val: bool) {
-        self.drawn = new_val;
-        for b in self.buttons.values_mut() {
-            b.change_drawn(new_val);
+        if self.drawn != new_val {
+            self.drawn = new_val;
+            for b in self.buttons.values_mut() {
+                b.change_drawn(new_val);
+            }
         }
-    }
-
-    pub fn get_mut_button(&mut self, id: &str) -> Option<&mut dyn Any> {
-        if let Some(button) = self.buttons.get_mut(id) {
-            return Some(button.as_any());
-        }
-        return None;
     }
 
     pub fn widget_result(&mut self) {}
@@ -72,6 +106,9 @@ impl Widget {
     }
 
     pub fn change_active(&mut self, new_value: bool) {
+        if self.active == new_value {
+            return; // Skip if no change
+        }
         self.active = new_value;
 
         self.buttons
@@ -107,6 +144,10 @@ impl Widget {
         self.height = new_height;
     }
 
+    fn invalidate_draw_cache(&mut self) {
+        self.cached_draw_order = None;
+    }
+
     fn mouse_over_component(&self, mouse_position: Point) -> bool {
         let component: Rect = self.get_rect();
         return component.contains_point(mouse_position) && self.active;
@@ -135,40 +176,49 @@ impl Widget {
         let rows = self.layout.len();
         let cols = self.layout[0].len();
         let mut found_components: HashMap<&str, (usize, usize)> = HashMap::new();
+        let mut components_locations: HashMap<(i32, i32), &'static str> = HashMap::new();
         let cell_width = self.width / cols as u32;
         let cell_height = self.height / rows as u32;
+
         for row in 0..rows {
             for col in 0..cols {
-                if !found_components.contains_key(self.layout[row][col]) {
-                    if let Some(component) = self.buttons.get_mut(self.layout[row][col]) {
-                        component.change_location(Point::new(
-                            self.location.x() + col as i32 * cell_width as i32,
-                            self.location.y() + row as i32 * cell_height as i32,
-                        ));
-                        found_components.insert(self.layout[row][col], (row, col));
-                        component.change_height(cell_height);
-                        component.change_width(cell_width);
+                let key = self.layout[row][col];
+                let loc: (i32, i32) = (
+                    self.location.x() + col as i32 * cell_width as i32,
+                    self.location.y() + row as i32 * cell_height as i32,
+                );
+                components_locations.insert((col as i32, row as i32), key);
+
+                if let Some((start_row, start_col)) = found_components.get(key) {
+                    // Component already placed, just extend dimensions
+                    if let Some(component) = self.buttons.get_mut(key) {
+                        if col > *start_col {
+                            component
+                                .change_width((col as u32 - *start_col as u32 + 1) * cell_width);
+                        }
+                        if row > *start_row {
+                            component
+                                .change_height((row as u32 - *start_row as u32 + 1) * cell_height);
+                        }
                     }
                 } else {
-                    if let Some(component) = self.buttons.get_mut(self.layout[row][col]) {
-                        if let Some((height, width)) =
-                            found_components.get_mut(self.layout[row][col])
-                        {
-                            if &col > width {
-                                component
-                                    .change_width((col as u32 - *width as u32 + 1) * cell_width);
-                            }
-                            if &row > height {
-                                component
-                                    .change_height((row as u32 - *height as u32 + 1) * cell_height);
-                            }
+                    // First time seeing this component
+                    if let Some(component) = self.buttons.get_mut(key) {
+                        let x_offset = if component.is_static() { 5 } else { 0 };
+                        component.change_location(Point::new(loc.0 + x_offset, loc.1));
+
+                        found_components.insert(key, (row, col));
+
+                        if !component.is_static() {
+                            component.change_height(cell_height);
+                            component.change_width(cell_width);
                         }
                     }
                 }
             }
         }
+        self.cached_interface_location = Some(components_locations);
     }
-
     pub fn draw<'a>(
         &mut self,
         canvas: &mut Canvas<Window>,
@@ -184,13 +234,33 @@ impl Widget {
             canvas.set_draw_color(SECONDARY_COLOR);
             canvas.fill_rect(rectangle).unwrap();
             self.drawn = true;
+            self.set_widget_layout();
         }
 
-        self.set_widget_layout();
+        if let Some(button_ids) = &self.cached_draw_order {
+            for id in button_ids {
+                if let Some(a) = self.buttons.get_mut(id) {
+                    a.change_active(self.active);
+                    a.draw(canvas, texture_creator, mouse_state, font);
+                }
+            }
+        } else {
+            let mut button_ids: Vec<&str> = self.buttons.keys().copied().collect();
+            button_ids.sort_by_key(|id| {
+                // high priority = false (drawn last), low priority = true (drawn first)
+                // so reverse: !draw_priority() sorts to the end
+                !self.buttons[id].draw_priority()
+            });
+            for id in &button_ids {
+                if let Some(a) = self.buttons.get_mut(id) {
+                    a.change_active(self.active);
+                    a.draw(canvas, texture_creator, mouse_state, font);
+                    a.change_drawn(true);
+                }
+            }
+            self.cached_draw_order = Some(button_ids);
+        }
 
-        self.buttons.iter_mut().for_each(|(_, a)| {
-            a.change_active(self.active);
-            a.draw(canvas, texture_creator, mouse_state, font);
-        });
+        // Single pass through sorted list
     }
 }

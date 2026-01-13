@@ -28,7 +28,6 @@ MacOS
 brew install sdl2
 ```
 
-
 ### How to run
 
 Once all the dependencies are installed just cd into the directory with the cargo.lock and cargo.toml files and run the command `cargo run`

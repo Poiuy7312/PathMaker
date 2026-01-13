@@ -6,39 +6,42 @@ use sdl2::mouse::MouseState;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::{Point, Rect};
 use sdl2::render::{Canvas, Texture, TextureCreator};
+use sdl2::surface::Surface;
 use sdl2::sys::False;
 use sdl2::video::{Window, WindowContext};
 
-use crate::colors::{BLACK, HOVER_COLOR, WHITE};
+use crate::colors::{BLACK, HOVER_COLOR, SECONDARY_COLOR, TERTIARY_COLOR, WHITE};
 use crate::components::Component;
 
 use sdl2::ttf;
 
-#[derive(Copy, Clone)]
-pub enum InterfaceType {
-    Dropdown,
-    Standard,
-    Switch,
-}
+fn calculate_scaled_font_size(text_len: u32, available_width: u32) -> u32 {
+    let char_width = 8;
+    let estimated_width = text_len * char_width;
 
-#[derive(Copy, Clone)]
-
-pub enum ValidDropdownType {
-    Dropdown,
-    Standard,
+    if estimated_width > available_width {
+        let scale = available_width as f32 / estimated_width as f32;
+        (estimated_width as f32 * scale) as u32
+    } else {
+        estimated_width
+    }
+    .max(4) // minimum font size
 }
 
 pub trait Interface: Component {
     fn get_rect(&self, point: Point) -> Rect;
+    fn is_static(&self) -> bool;
+    fn draw_priority(&self) -> bool;
+    fn dirty_parent(&self) -> bool;
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Point,
+        mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     );
     fn as_any(&mut self) -> &mut dyn Any;
-    fn change_drawn(&mut self, new_val: bool);
+    fn change_drawn(&self, new_val: bool);
     fn is_drawn(&self) -> bool;
 }
 
@@ -46,8 +49,6 @@ pub trait ValidDropdownOption: Interface {
     fn contains(&self, text: Option<&str>) -> bool;
     fn layout(&mut self, origin: Point, width: u32, height: u32) -> u32;
     fn set_filter(&mut self, text: Option<&str>);
-    fn get_type(&self) -> ValidDropdownType;
-    fn get_options(self: Box<Self>) -> Option<Vec<Box<dyn ValidDropdownOption>>>;
 }
 
 #[derive(Clone)]
@@ -55,23 +56,22 @@ pub trait ValidDropdownOption: Interface {
 pub struct InterfaceStyle {
     pub text_color: Color,
     pub background_color: Color,
-    pub hover_color: Color,
 }
 
 /// Struct for simple button can only be a rectangle
-#[derive(Clone)]
 pub struct StandardButton {
     pub height: u32,
     pub width: u32,
     pub location: Point,
     pub text_color: Color,
     pub background_color: Color,
-    pub hover_color: Color,
+    pub hover: RefCell<bool>,
     pub text: String,
     pub id: String,
     pub filter: Option<String>,
     pub active: bool,
-    pub drawn: bool,
+    pub drawn: RefCell<bool>,
+    pub cached_texture: Option<Texture<'static>>,
 }
 
 impl Component for StandardButton {
@@ -128,59 +128,100 @@ impl Interface for StandardButton {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
+    fn is_static(&self) -> bool {
+        false
+    }
+
+    fn draw_priority(&self) -> bool {
+        true
+    }
+    fn dirty_parent(&self) -> bool {
+        false
+    }
+
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 
-    fn change_drawn(&mut self, new_val: bool) {
-        self.drawn = new_val;
+    fn change_drawn(&self, new_val: bool) {
+        self.drawn.replace(new_val);
     }
 
     fn is_drawn(&self) -> bool {
-        self.drawn
+        let drawn = unsafe { *self.drawn.as_ptr() };
+        if drawn {
+            return true;
+        }
+        return false;
     }
 
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Point,
+        mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        if !self.drawn {
-            let button_background: Rect = self.get_rect(self.location);
-            let font_size = 8 * self.text.chars().count() as u32;
-            let button_outline =
-                Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
-            let text_map = Rect::from_center(button_background.center(), font_size, 20);
-            let mouse_state = mouse_state;
-            font.set_style(sdl2::ttf::FontStyle::BOLD);
-            canvas.set_draw_color(Color::RGB(0, 0, 0));
-            canvas.fill_rect(button_outline).unwrap();
-
-            // render a surface, and convert it to a texture bound to the canvas
-            if self.mouse_over_component((mouse_state)) {
-                canvas.set_draw_color(self.hover_color);
-                canvas.fill_rect(button_background).unwrap();
-            } else {
-                canvas.set_draw_color(self.background_color);
-                canvas.fill_rect(button_background).unwrap();
-            }
-
-            let font_surface = font
-                .render(&self.text)
-                .blended(self.text_color)
-                .map_err(|e| e.to_string())
-                .unwrap();
-
-            let font_texture: Texture<'_> = texture_creator
-                .create_texture_from_surface(&font_surface)
-                .map_err(|e| e.to_string())
-                .unwrap();
-            canvas
-                .copy(&font_texture, None, text_map)
-                .expect("Button unable to display text");
+        let hovering = self.mouse_over_component(mouse_position);
+        if self.is_hovering() != hovering {
+            self.change_drawn(false);
+            self.change_hover(hovering);
         }
+        if self.is_drawn() {
+            return;
+        }
+
+        let button_background: Rect = self.get_rect(self.location);
+        let available_width = (self.width as i32 - 10) as u32;
+        let text_len = self.text.chars().count() as u32;
+        let font_size = calculate_scaled_font_size(text_len, available_width);
+        let button_outline =
+            Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
+        let mut text_map = Rect::from_center(button_background.center(), font_size, 20);
+        if text_map.width() >= button_background.width() {
+            text_map.set_width(button_background.width());
+        }
+        font.set_style(sdl2::ttf::FontStyle::BOLD);
+        canvas.set_draw_color(Color::RGB(0, 0, 0));
+        canvas.fill_rect(button_outline).unwrap();
+
+        let font_surface: Surface<'_>;
+
+        // render a surface, and convert it to a texture bound to the canvas
+        if hovering {
+            canvas.set_draw_color(WHITE);
+            canvas.fill_rect(button_background).unwrap();
+            font_surface = if self.cached_texture.is_none() {
+                font.render(&self.text)
+                    .blended(BLACK)
+                    .map_err(|e| e.to_string())
+                    .unwrap()
+            } else {
+                // Use cached texture
+                return;
+            }
+        } else {
+            canvas.set_draw_color(self.background_color);
+            canvas.fill_rect(button_background).unwrap();
+            font_surface = if self.cached_texture.is_none() {
+                font.render(&self.text)
+                    .blended(self.text_color)
+                    .map_err(|e| e.to_string())
+                    .unwrap()
+            } else {
+                // Use cached texture
+                return;
+            }
+        }
+
+        let font_texture: Texture<'_> = texture_creator
+            .create_texture_from_surface(&font_surface)
+            .map_err(|e| e.to_string())
+            .unwrap();
+        canvas
+            .copy(&font_texture, None, text_map)
+            .expect("Button unable to display text");
+        self.change_drawn(true);
     }
 }
 
@@ -194,17 +235,14 @@ impl ValidDropdownOption for StandardButton {
         }
     }
 
-    fn get_options(self: Box<Self>) -> Option<Vec<Box<dyn ValidDropdownOption>>> {
+    /*fn get_options(self: Box<Self>) -> Option<Vec<StandardButton>> {
         None
-    }
+    }*/
 
-    fn get_type(&self) -> ValidDropdownType {
-        return ValidDropdownType::Standard;
-    }
-
-    fn layout(&mut self, origin: Point, width: u32, _: u32) -> u32 {
+    fn layout(&mut self, origin: Point, width: u32, height: u32) -> u32 {
         self.location = origin;
         self.width = width;
+        self.height = height;
         if self.contains(self.filter.as_deref()) {
             return 1;
         }
@@ -226,6 +264,19 @@ impl PartialEq for StandardButton {
     }
 }
 
+impl StandardButton {
+    fn change_hover(&self, new_val: bool) {
+        self.hover.replace(new_val);
+    }
+    fn is_hovering(&self) -> bool {
+        let hover = unsafe { *self.hover.as_ptr() };
+        if hover {
+            return true;
+        }
+        return false;
+    }
+}
+
 /// Creates a dropdown menu.
 
 pub struct Dropdown {
@@ -234,14 +285,14 @@ pub struct Dropdown {
     pub location: Point,
     pub text_color: Color,
     pub background_color: Color,
-    pub hover_color: Color,
+    pub hover: RefCell<bool>,
     pub text: String,
     pub id: String,
     pub active: bool,
     pub clicked_on: bool,
-    pub options: Vec<Box<dyn ValidDropdownOption>>,
+    pub options: RefCell<Vec<StandardButton>>,
     pub filter: Option<String>,
-    pub drawn: bool,
+    pub drawn: RefCell<bool>,
 }
 
 impl Component for Dropdown {
@@ -252,13 +303,19 @@ impl Component for Dropdown {
         }
 
         if self.clicked_on {
-            self.options.iter_mut().for_each(|a| a.change_active(true));
+            self.options
+                .borrow_mut()
+                .iter_mut()
+                .for_each(|a| a.change_active(true));
             let (option_clicked, checked_option) = self.check_options(mouse_position);
             if option_clicked {
                 return (true, checked_option);
             }
         } else {
-            self.options.iter_mut().for_each(|a| a.change_active(false));
+            self.options
+                .borrow_mut()
+                .iter_mut()
+                .for_each(|a| a.change_active(false));
         }
 
         (false, None)
@@ -297,6 +354,7 @@ impl Component for Dropdown {
         if !self.active {
             self.clicked_on = false;
             self.options
+                .borrow_mut()
                 .iter_mut()
                 .filter(|a| a.contains(self.filter.as_deref()))
                 .for_each(|a| {
@@ -322,61 +380,103 @@ impl Interface for Dropdown {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
+    fn is_static(&self) -> bool {
+        true
+    }
+    fn draw_priority(&self) -> bool {
+        false
+    }
+
+    fn dirty_parent(&self) -> bool {
+        true
+    }
+
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
 
-    fn change_drawn(&mut self, new_val: bool) {
-        self.drawn = new_val;
+    fn change_drawn(&self, new_val: bool) {
+        self.drawn.replace(new_val);
     }
+
     fn is_drawn(&self) -> bool {
-        self.drawn
+        let drawn = unsafe { *self.drawn.as_ptr() };
+        if drawn {
+            return true;
+        }
+        return false;
     }
 
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Point,
+        mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
         let button_background: Rect = self.get_rect(self.location);
-        let font_size = 8 * self.text.chars().count() as u32;
+        let available_width = ((self.width * 8 / 10) - 40) as u32;
+        let text_len = self.text.chars().count() as u32;
+        let font_size = calculate_scaled_font_size(text_len, available_width);
         let button_outline =
             Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
-        let text_map = Rect::from_center(button_background.center(), font_size, 20);
+        let text_map = Rect::new(
+            button_background.left() + 2,
+            button_background.top(),
+            font_size,
+            self.height,
+        );
         font.set_style(sdl2::ttf::FontStyle::BOLD);
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
+        canvas.set_draw_color(BLACK);
         canvas.fill_rect(button_outline).unwrap();
 
         // render a surface, and convert it to a texture bound to the canvas
-        if self.mouse_over_component(mouse_state) {
-            canvas.set_draw_color(self.hover_color);
+        if self.mouse_over_component(mouse_position) {
+            canvas.set_draw_color(WHITE);
             canvas.fill_rect(button_background).unwrap();
+            let font_surface = font
+                .render(&self.text)
+                .blended(BLACK)
+                .map_err(|e| e.to_string())
+                .unwrap();
+
+            let font_texture: Texture<'_> = texture_creator
+                .create_texture_from_surface(&font_surface)
+                .map_err(|e| e.to_string())
+                .unwrap();
+            canvas
+                .copy(&font_texture, None, text_map)
+                .expect("Button unable to display text");
+
+            let lines: Vec<[Point; 3]> = self.get_arrow_graphic();
+            canvas.set_draw_color(BLACK);
+
+            for line in lines {
+                canvas.draw_lines(&line[..]).unwrap();
+            }
         } else {
             canvas.set_draw_color(self.background_color);
             canvas.fill_rect(button_background).unwrap();
-        }
+            let font_surface = font
+                .render(&self.text)
+                .blended(self.text_color)
+                .map_err(|e| e.to_string())
+                .unwrap();
 
-        let font_surface = font
-            .render(&self.text)
-            .blended(self.text_color)
-            .map_err(|e| e.to_string())
-            .unwrap();
+            let font_texture: Texture<'_> = texture_creator
+                .create_texture_from_surface(&font_surface)
+                .map_err(|e| e.to_string())
+                .unwrap();
+            canvas
+                .copy(&font_texture, None, text_map)
+                .expect("Button unable to display text");
 
-        let font_texture: Texture<'_> = texture_creator
-            .create_texture_from_surface(&font_surface)
-            .map_err(|e| e.to_string())
-            .unwrap();
-        canvas
-            .copy(&font_texture, None, text_map)
-            .expect("Button unable to display text");
+            let lines = self.get_arrow_graphic();
+            canvas.set_draw_color(WHITE);
 
-        let lines = self.get_arrow_graphic();
-        canvas.set_draw_color(Color::RGB(0, 0, 0));
-
-        for line in lines {
-            canvas.draw_lines(&line[..]).unwrap();
+            for line in lines {
+                canvas.draw_lines(&line[..]).unwrap();
+            }
         }
         // Draw the arrow as a filled triangle
         // SDL2's Canvas does not have a fill_polygon, so we can only draw the outline.
@@ -384,14 +484,12 @@ impl Interface for Dropdown {
         // Here, we just draw the triangle outline.
 
         if self.clicked_on {
-            self.options
-                .iter()
-                .for_each(|a| match a.contains(self.filter.as_deref()) {
-                    true => {
-                        a.draw(canvas, texture_creator, mouse_state, font);
-                    }
-                    false => {}
-                });
+            self.layout_function();
+            println!("Dropdown clicked on");
+            self.options.borrow_mut().iter_mut().for_each(|a| {
+                a.change_active(true);
+                a.draw(canvas, texture_creator, mouse_position, font);
+            });
         }
     }
 }
@@ -402,7 +500,7 @@ impl ValidDropdownOption for Dropdown {
             if self.id.contains(text.unwrap().trim()) {
                 return true;
             } else {
-                for option in self.options.iter() {
+                for option in self.options.borrow().iter() {
                     if option.contains(text) {
                         return true;
                     }
@@ -413,23 +511,23 @@ impl ValidDropdownOption for Dropdown {
         return true;
     }
 
-    fn get_options(self: Box<Self>) -> Option<Vec<Box<dyn ValidDropdownOption>>> {
+    /*fn get_options(self: Box<Self>) -> Option<Vec<StandardButton>> {
         return Some(self.options);
-    }
+    }*/
 
     fn set_filter(&mut self, text: Option<&str>) {
         match text {
             Some(value) => {
                 self.filter = Some(value.to_string());
-                self.options.iter_mut().for_each(|a| a.set_filter(text))
+                self.options
+                    .borrow_mut()
+                    .iter_mut()
+                    .for_each(|a| a.set_filter(text))
             }
             None => {
                 self.filter = None;
             }
         }
-    }
-    fn get_type(&self) -> ValidDropdownType {
-        return ValidDropdownType::Dropdown;
     }
 
     fn layout(&mut self, origin: Point, width: u32, height: u32) -> u32 {
@@ -441,7 +539,7 @@ impl ValidDropdownOption for Dropdown {
             let mut consumed: u32 = 1;
             if self.clicked_on {
                 let mut offset = 1;
-                for child in self.options.iter_mut() {
+                for child in self.options.borrow_mut().iter_mut() {
                     let child_x = self.location.x + (width as i32 / 4);
                     let child_y = self.location.y + (offset as i32 * height as i32);
                     let child_origin = Point::new(child_x, child_y);
@@ -465,7 +563,7 @@ impl Dropdown {
     }
 
     fn get_arrow_graphic(&self) -> Vec<[Point; 3]> {
-        let x = self.location.x + self.width as i32 * 3 / 4;
+        let x = self.location.x + self.width as i32 * 4 / 5;
         let y = self.location.y + self.height as i32 / 2;
         let center_points = [Point::new(x, y - 1), Point::new(x, y), Point::new(x, y + 1)];
         let mut lines: Vec<[Point; 3]> = Vec::new();
@@ -488,8 +586,19 @@ impl Dropdown {
         return lines;
     }
 
+    fn layout_function(&self) {
+        let mut offset: u32 = 1;
+        for b in self.options.borrow_mut().iter_mut() {
+            let col = self.location.y + (offset as i32 * self.height as i32);
+            let loc = Point::new(self.location.x, col);
+            let used = b.layout(loc, self.width, self.height);
+            b.change_drawn(false);
+            offset += used;
+        }
+    }
+
     fn check_options(&mut self, mouse_position: Point) -> (bool, Option<String>) {
-        for a in self.options.iter_mut() {
+        for a in self.options.borrow_mut().iter_mut() {
             let (result, clicked_button) = a.on_click(mouse_position);
             if result {
                 return (true, clicked_button);
@@ -508,7 +617,7 @@ pub struct OptionButton {
     pub options: RefCell<Vec<(String, StandardButton)>>,
     active_option: Option<String>,
     defaults: HashMap<String, InterfaceStyle>,
-    pub drawn: bool,
+    pub drawn: RefCell<bool>,
 }
 
 impl Component for OptionButton {
@@ -586,22 +695,36 @@ impl Interface for OptionButton {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
+    fn is_static(&self) -> bool {
+        false
+    }
+
+    fn draw_priority(&self) -> bool {
+        false
+    }
+    fn dirty_parent(&self) -> bool {
+        false
+    }
+
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
-    fn change_drawn(&mut self, new_val: bool) {
-        self.drawn = new_val;
+    fn change_drawn(&self, new_val: bool) {
+        self.drawn.replace(new_val);
     }
 
     fn is_drawn(&self) -> bool {
-        self.drawn
+        let drawn = unsafe { *self.drawn.as_ptr() };
+        if drawn {
+            return true;
+        }
+        return false;
     }
-
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_state: Point,
+        mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
         // Draw each button in the switch
@@ -617,7 +740,7 @@ impl Interface for OptionButton {
                     }
                 }
             }
-            b.draw(canvas, texture_creator, mouse_state, font);
+            b.draw(canvas, texture_creator, mouse_position, font);
         })
     }
 }
@@ -646,12 +769,13 @@ impl OptionButton {
                     location: Point::new(location.x() + count * button_width as i32, location.y()),
                     text_color: style.text_color,
                     background_color: style.background_color,
-                    hover_color: style.hover_color,
+                    hover: RefCell::new(false),
                     text: text.to_string(),
                     id: text.to_string(),
                     filter: None,
                     active,
-                    drawn,
+                    drawn: RefCell::new(drawn),
+                    cached_texture: None,
                 },
             ));
             count += 1;
@@ -665,7 +789,197 @@ impl OptionButton {
             options: RefCell::new(options),
             active_option: None,
             defaults,
-            drawn,
+            drawn: RefCell::new(drawn),
         }
+    }
+}
+
+pub struct CheckBox {
+    pub label: String,
+    pub checked: bool,
+    pub location: Point,
+    pub size: u32,
+    pub id: String,
+    pub active: bool,
+    pub drawn: RefCell<bool>,
+}
+
+impl Component for CheckBox {
+    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
+        if self.mouse_over_component(mouse_position) {
+            self.checked = !self.checked;
+            return (true, Some(self.get_id()));
+        } else {
+            return (false, None);
+        }
+    }
+
+    fn get_id(&self) -> String {
+        return self.id.to_string();
+    }
+
+    fn change_location(&mut self, new_location: Point) {
+        self.location = new_location;
+    }
+
+    fn change_active(&mut self, new_value: bool) {
+        self.active = new_value;
+    }
+
+    fn is_active(&self) -> bool {
+        return self.active;
+    }
+
+    fn get_location(&self) -> Point {
+        return self.location;
+    }
+
+    fn change_width(&mut self, new_width: u32) {
+        self.size = new_width;
+    }
+
+    fn get_width(&self) -> u32 {
+        self.size
+    }
+
+    fn get_height(&self) -> u32 {
+        self.size
+    }
+
+    fn change_height(&mut self, new_height: u32) {
+        self.size = new_height;
+    }
+
+    fn mouse_over_component(&self, mouse_position: Point) -> bool {
+        let component: Rect = self.get_rect(self.location);
+        return component.contains_point(mouse_position) && self.active;
+    }
+}
+
+impl Interface for CheckBox {
+    fn get_rect(&self, point: Point) -> Rect {
+        Rect::new(point.x(), point.y(), self.size, self.size)
+    }
+
+    fn draw_priority(&self) -> bool {
+        true
+    }
+    fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn is_static(&self) -> bool {
+        true
+    }
+
+    fn draw<'a>(
+        &self,
+        canvas: &mut Canvas<Window>,
+        texture_creator: &'a TextureCreator<WindowContext>,
+        mouse_position: Point,
+        font: &mut ttf::Font<'_, 'static>,
+    ) {
+        if self.is_drawn() && !self.mouse_over_component(mouse_position) {
+            return; // Skip if already drawn and not hovering
+        }
+
+        let button_background: Rect = self.get_rect(self.location);
+
+        let font_size = 8 * self.label.chars().count() as u32;
+        let button_outline =
+            Rect::from_center(button_background.center(), self.size + 5, self.size + 5);
+        let text_map = Rect::new(
+            button_background.right() + 5,
+            button_background.top(),
+            font_size,
+            button_background.height(),
+        );
+        let background: Rect = Rect::new(
+            button_background.left() - 2,
+            button_background.top() - 2,
+            (text_map.right() - button_background.left() + 4) as u32,
+            (button_background.height() + 4) as u32,
+        );
+        let mouse_position = mouse_position;
+        font.set_style(sdl2::ttf::FontStyle::BOLD);
+        canvas.set_draw_color(SECONDARY_COLOR);
+        canvas.fill_rect(background).unwrap();
+        canvas.set_draw_color(BLACK);
+        canvas.fill_rect(button_outline).unwrap();
+
+        let font_surface: Surface<'_>;
+
+        // render a surface, and convert it to a texture bound to the canvas
+        if self.mouse_over_component(mouse_position) {
+            canvas.set_draw_color(WHITE);
+            canvas.fill_rect(button_background).unwrap();
+            font_surface = font
+                .render(&self.label)
+                .blended(BLACK)
+                .map_err(|e| e.to_string())
+                .unwrap();
+        } else {
+            canvas.set_draw_color(WHITE);
+            canvas.fill_rect(button_background).unwrap();
+            font_surface = font
+                .render(&self.label)
+                .blended(BLACK)
+                .map_err(|e| e.to_string())
+                .unwrap();
+        }
+
+        let font_texture: Texture<'_> = texture_creator
+            .create_texture_from_surface(&font_surface)
+            .map_err(|e| e.to_string())
+            .unwrap();
+        canvas
+            .copy(&font_texture, None, text_map)
+            .expect("Button unable to display text");
+        if self.checked {
+            let lines = self.get_check_graphic(&button_background);
+            canvas.set_draw_color(BLACK);
+
+            canvas.draw_lines(&lines.0[..]).unwrap();
+            canvas.draw_lines(&lines.1[..]).unwrap();
+        }
+    }
+
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn change_drawn(&self, new_val: bool) {
+        self.drawn.replace(new_val);
+    }
+
+    fn is_drawn(&self) -> bool {
+        let drawn = unsafe { *self.drawn.as_ptr() };
+        if drawn {
+            return true;
+        }
+        return false;
+    }
+}
+
+impl CheckBox {
+    fn get_check_graphic(&self, rect: &Rect) -> ([Point; 6], [Point; 6]) {
+        (
+            [
+                Point::new(self.location.x, self.location.y + 1),
+                Point::new(rect.right(), rect.bottom() + 1),
+                Point::new(self.location.x, self.location.y),
+                Point::new(rect.right(), rect.bottom()),
+                Point::new(self.location.x, self.location.y - 1),
+                Point::new(rect.right(), rect.bottom() - 1),
+            ],
+            [
+                Point::new(rect.right(), self.location.y + 1),
+                Point::new(rect.left(), rect.bottom() + 1),
+                Point::new(rect.right(), self.location.y),
+                Point::new(rect.left(), rect.bottom()),
+                Point::new(rect.right(), self.location.y - 1),
+                Point::new(rect.left(), rect.bottom() - 1),
+            ],
+        )
     }
 }

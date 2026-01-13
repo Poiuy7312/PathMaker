@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cell::RefCell;
 
 use sdl2::mouse::MouseState;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -21,7 +22,7 @@ pub struct InputBox {
     pub width: u32,
     pub id: String,
     pub location: Point,
-    pub drawn: bool,
+    pub drawn: RefCell<bool>,
 }
 
 impl Component for InputBox {
@@ -81,16 +82,35 @@ impl Interface for InputBox {
     fn get_rect(&self, point: Point) -> Rect {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
+    fn is_static(&self) -> bool {
+        false
+    }
+
+    fn draw_priority(&self) -> bool {
+        true
+    }
+
+    fn dirty_parent(&self) -> bool {
+        false
+    }
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
-    fn change_drawn(&mut self, new_val: bool) {
-        self.drawn = new_val;
+
+    fn change_drawn(&self, new_val: bool) {
+        if self.drawn == new_val.into() {
+            return;
+        }
+        self.drawn.replace(new_val);
     }
 
     fn is_drawn(&self) -> bool {
-        self.drawn
+        let drawn = unsafe { *self.drawn.as_ptr() };
+        if drawn {
+            return true;
+        }
+        return false;
     }
 
     fn draw<'a>(
@@ -118,12 +138,15 @@ impl Interface for InputBox {
         match self.text.len() > 0 {
             true => {
                 let font_size = 8 * self.text.chars().count() as u32;
-                let text_map: Rect = Rect::new(
+                let mut text_map: Rect = Rect::new(
                     text_map_x,
                     rectangle.center().y() - 5,
                     font_size,
                     self.height / 2,
                 );
+                if text_map.width() >= box_background.width() {
+                    text_map.set_width(box_background.width() * 5 / 6);
+                }
                 let font_surface = font
                     .render(&self.text)
                     .blended(self.text_color)

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use sdl2::rect::{Point, Rect};
@@ -10,6 +11,9 @@ pub fn mouse_over(rect: Rect, mouse_position: Point) -> bool {
 
 use crate::colors::*;
 
+/*
+/// Deprecated
+///
 pub fn walk_tree(
     node: &fileDialog::DirectoryNode,
     width: u32,
@@ -53,6 +57,8 @@ pub fn walk_tree(
     return buttons;
 }
 
+*/
+
 pub fn get_dir_map(
     node: &fileDialog::DirectoryNode,
     width: u32,
@@ -67,12 +73,13 @@ pub fn get_dir_map(
             location: Point::new(0, 62),
             text_color: WHITE,
             background_color: QUATERNARY_COLOR,
-            hover_color: SECONDARY_COLOR,
+            hover: RefCell::new(false),
             text: node.name.to_string(),
             id: node.path.to_string_lossy().to_string(),
             active: false,
-            drawn: false,
+            drawn: RefCell::new(false),
             filter: None,
+            cached_texture: None,
         };
 
         for child in &node.children {
@@ -91,12 +98,13 @@ pub fn get_dir_map(
                             location: Point::new(0, 62),
                             text_color: WHITE,
                             background_color: QUATERNARY_COLOR,
-                            hover_color: SECONDARY_COLOR,
+                            hover: RefCell::new(false),
                             text: child.name.to_string(),
                             id: child.path.to_string_lossy().to_string(),
                             active: false,
                             filter: None,
-                            drawn: false,
+                            drawn: RefCell::new(false),
+                            cached_texture: None,
                         },
                         Vec::new(),
                     ),

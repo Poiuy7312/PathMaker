@@ -28,25 +28,46 @@ pub struct FileExplorer {
     pub current_display: String,
     pub filter: Option<String>,
     pub active: bool,
-    pub drawn: bool,
+    pub drawn: RefCell<bool>,
 }
 impl Interface for FileExplorer {
     fn get_rect(&self, point: Point) -> Rect {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
+    fn is_static(&self) -> bool {
+        false
+    }
+
+    fn draw_priority(&self) -> bool {
+        true
+    }
+
+    fn dirty_parent(&self) -> bool {
+        false
+    }
+
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
-    fn change_drawn(&mut self, new_val: bool) {
-        self.drawn = new_val;
+
+    fn change_drawn(&self, new_val: bool) {
+        if self.drawn == new_val.into() {
+            return;
+        }
+        self.drawn.replace(new_val);
+
         for (b, _) in self.directories.borrow_mut().values_mut() {
             b.change_drawn(new_val);
         }
     }
 
     fn is_drawn(&self) -> bool {
-        self.drawn
+        let drawn = unsafe { *self.drawn.as_ptr() };
+        if drawn {
+            return true;
+        }
+        return false;
     }
 
     fn draw<'a>(
@@ -60,7 +81,7 @@ impl Interface for FileExplorer {
 
         let mut display: String;
 
-        if !self.drawn {
+        if !self.is_drawn() {
             match &self.filter {
                 Some(filter) => match filter.ends_with(&['/', '\\']) {
                     true => {
