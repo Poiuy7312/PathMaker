@@ -9,9 +9,10 @@ use sdl2::surface::Surface;
 use sdl2::ttf;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::env;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{env, thread};
 
 // mod button;
 mod colors;
@@ -20,8 +21,7 @@ mod components;
 
 mod fileDialog;
 
-mod layout;
-
+mod pathfinding;
 mod settings;
 mod util;
 
@@ -71,6 +71,8 @@ pub fn main() {
     /*----- File Explorer Components ----- */
 
     let controls_width = window_width * 1 / 5;
+
+    let mut run_game_board = false;
     //= Rect::new(998, 0, 1000, 1000);
 
     let directories: HashMap<String, (StandardButton, Vec<String>)> =
@@ -473,13 +475,16 @@ pub fn main() {
         height: board_height,
         tile_amount_x: tiles_x,
         tile_amount_y: tiles_y,
-        active: false,
+        active: true,
         id: String::from("game_board"),
         selected_piece_type: TileType::Obstacle,
         cached_background: None,
         cached_grid: RefCell::new(None),
         multiple_agents: settings.enable_multiple_agents,
         multiple_goals: settings.enable_multiple_agents,
+        agents: vec![],
+        starts: vec![],
+        goals: vec![],
     };
 
     canvas.set_draw_color(Color::RGB(87, 87, 81));
@@ -513,6 +518,11 @@ pub fn main() {
                 file_select_widget.get_location().y(),
             ));
             file_select_widget.change_drawn(false);
+        }
+
+        if run_game_board {
+            game_board.update_board("A*");
+            game_board.draw(&mut canvas);
         }
 
         /*-------- Updates User UI Depending on State -------- */
@@ -636,7 +646,7 @@ pub fn main() {
                 match clicked_button {
                     Some(name) => match name.as_str() {
                         "START" => {
-                            game_board.active = true;
+                            run_game_board = true;
                         }
                         "Upload Map" => {
                             game_board.draw(&mut canvas);
@@ -760,11 +770,11 @@ pub fn main() {
                             }
                             "Back" => {
                                 file_select_widget.change_active(false);
+                                select_file = false;
                                 canvas.set_draw_color(Color::RGB(87, 87, 81));
                                 canvas.clear();
-                                game_board.draw(&mut canvas);
                                 file_select_widget.change_result(Some(home_dir.clone()));
-                                select_file = false;
+                                game_board.draw(&mut canvas);
                             }
                             _ => {}
                         }

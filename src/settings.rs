@@ -38,7 +38,7 @@ impl Default for GameSettings {
             enable_doubling_experiment: false,
             enable_multiple_agents: false,
             enable_multiple_goals: false,
-            selected_algorithm: String::from("A*"),
+            selected_algorithm: String::from("Greedy"),
             board_width: 800,
             board_height: 800,
             tiles_x: 40,
