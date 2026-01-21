@@ -625,18 +625,18 @@ impl Component for OptionButton {
         return self.id.to_string();
     }
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
-        match self
-            .options
-            .borrow_mut()
-            .iter_mut()
-            .find(|(_, a)| a.get_rect(a.location).contains_point(mouse_position))
-        {
-            Some((_, clicked_button)) => {
-                self.active_option = Some(clicked_button.get_id());
-                return (true, Some(clicked_button.get_id()));
+        let mut cur_option: Option<String> = None;
+        self.options.borrow_mut().iter_mut().for_each(|(_, a)| {
+            a.change_drawn(false);
+            if a.get_rect(a.location).contains_point(mouse_position) {
+                cur_option = Some(a.get_id());
             }
-            None => return (false, None),
+        });
+        if cur_option.is_some() {
+            self.active_option = cur_option.clone();
+            return (true, cur_option);
         }
+        return (false, None);
     }
 
     fn mouse_over_component(&self, mouse_position: Point) -> bool {
@@ -711,6 +711,9 @@ impl Interface for OptionButton {
     }
     fn change_drawn(&self, new_val: bool) {
         self.drawn.replace(new_val);
+        self.options.borrow_mut().iter_mut().for_each(|(_, a)| {
+            a.drawn.replace(new_val);
+        });
     }
 
     fn is_drawn(&self) -> bool {
@@ -720,6 +723,7 @@ impl Interface for OptionButton {
         }
         return false;
     }
+
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,

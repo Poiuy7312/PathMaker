@@ -14,9 +14,9 @@ use std::iter;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::colors::*;
 use crate::components::{board::*, button::*, inputbox::*, Component};
 use crate::fileDialog::DirectoryNode;
-use crate::{colors::*, layout};
 
 pub struct FileExplorer {
     pub location: Point,
@@ -132,26 +132,7 @@ impl Interface for FileExplorer {
             self.directories
                 .borrow_mut()
                 .values_mut()
-                .filter(|(b, _)| b.mouse_over_component(mouse_state) || !b.is_drawn())
-                .for_each(|(button, _)| {
-                    if button.mouse_over_component(mouse_state) {
-                        match button.is_drawn() {
-                            true => {
-                                button.change_drawn(false);
-                            }
-                            false => {}
-                        }
-                        button.draw(canvas, &texture_creator, mouse_state, font);
-                    } else {
-                        match button.is_drawn() {
-                            true => {}
-                            false => {
-                                button.draw(canvas, &texture_creator, mouse_state, font);
-                                button.change_drawn(true);
-                            }
-                        }
-                    }
-                });
+                .for_each(|(button, _)| button.draw(canvas, texture_creator, mouse_state, font));
         }
     }
 }
