@@ -16,6 +16,7 @@ use serde_json::{self, json};
 
 use crate::colors::*;
 use crate::components::Component;
+use crate::pathfinding::Agent;
 
 #[derive(Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub enum TileType {
@@ -91,29 +92,37 @@ impl Tile {
         self.cached_rectangle = Some(tile_rect);
         match self.tile_type {
             TileType::Obstacle => {
-                self.dirty = false;
                 canvas.set_draw_color(BLACK);
                 canvas.fill_rect(tile_rect).unwrap();
-            }
-            TileType::Floor => {}
-            TileType::Player => {
                 self.dirty = false;
+            }
+            TileType::Floor => {
+                canvas.set_draw_color(WHITE);
+                canvas.fill_rect(tile_rect).unwrap();
+                self.dirty = false;
+            }
+            TileType::Player => {
                 canvas.set_draw_color(GREEN);
                 canvas.fill_rect(tile_rect).unwrap();
+                self.dirty = false;
             }
             TileType::Enemy => {
-                self.dirty = false;
                 canvas.set_draw_color(RED);
                 canvas.fill_rect(tile_rect).unwrap();
+                self.dirty = false;
             }
         }
+    }
+
+    pub fn is_traversable(&self) -> bool {
+        return self.tile_type != TileType::Obstacle;
     }
 
     fn change_tile_type(&mut self, new_type: TileType) {
         if self.tile_type != new_type {
             self.tile_type = new_type;
-            self.dirty = true;
         }
+        self.dirty = true;
     }
 }
 
@@ -125,9 +134,12 @@ pub struct Board {
     pub tile_amount_y: u32,
     pub selected_piece_type: TileType,
     pub id: String,
+    pub starts: Vec<(i32, i32)>,
+    pub goals: Vec<(i32, i32)>,
     pub active: bool,
     pub multiple_agents: bool,
     pub multiple_goals: bool,
+    pub agents: Vec<Agent>,
     pub cached_background: Option<Rect>,
     pub cached_grid: RefCell<Option<HashMap<(i32, i32), Tile>>>,
 }
@@ -193,6 +205,9 @@ impl<'de> Deserialize<'de> for Board {
             multiple_goals: data.multiple_goals,
             cached_background: None,
             cached_grid: RefCell::new(Some(grid)),
+            agents: vec![],
+            goals: vec![],
+            starts: vec![],
         })
     }
 }
@@ -258,8 +273,10 @@ impl Component for Board {
                 grid.values_mut()
                     .filter(|t| t.tile_type == TileType::Player)
                     .for_each(|t| {
-                        t.change_tile_type(TileType::Floor);
-                        self.cached_background = None;
+                        if t.position != pos {
+                            t.change_tile_type(TileType::Floor);
+                        }
+                        self.starts.clear();
                     });
             }
 
@@ -267,19 +284,30 @@ impl Component for Board {
                 grid.values_mut()
                     .filter(|t| t.tile_type == TileType::Enemy)
                     .for_each(|t| {
-                        t.change_tile_type(TileType::Floor);
-                        self.cached_background = None;
+                        if t.position != pos {
+                            t.change_tile_type(TileType::Floor);
+                        }
+                        self.goals.clear();
                     });
             }
 
             if let Some(tile) = grid.get_mut(&pos) {
                 match self.selected_piece_type {
                     TileType::Obstacle => tile.change_tile_type(TileType::Obstacle),
-                    TileType::Enemy => tile.change_tile_type(TileType::Enemy),
-                    TileType::Player => tile.change_tile_type(TileType::Player),
+                    TileType::Enemy => {
+                        if tile.tile_type != TileType::Enemy {
+                            self.goals.push(pos);
+                            tile.change_tile_type(TileType::Enemy);
+                        }
+                    }
+                    TileType::Player => {
+                        if tile.tile_type != TileType::Player {
+                            self.starts.push(pos);
+                            tile.change_tile_type(TileType::Player);
+                        }
+                    }
                     _ => {}
                 }
-
                 self.cached_grid.borrow_mut().replace(grid);
                 return (true, Some(self.get_id()));
             }
@@ -367,12 +395,6 @@ impl Board {
         self.height / self.tile_amount_y
     }
 
-    /// Return json representation of grid information for saving to file
-    pub fn map_json(&self) -> String {
-        let json_string = json!(self);
-        return json_string.to_string();
-    }
-
     pub fn save_to_file(&self, filepath: &str) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self)?;
         println!("{}", json);
@@ -380,7 +402,37 @@ impl Board {
         Ok(())
     }
 
-    /// Load board from JSON file
+    fn create_agents(&mut self) {
+        if self.starts.len() != self.goals.len() {
+            println!("Not all agents have a corresponding goal");
+            return;
+        }
+        for i in 0..self.starts.len() {
+            self.agents.push(Agent {
+                start: self.starts[i],
+                goal: self.goals[i],
+                position: self.starts[i],
+                path: vec![],
+            })
+        }
+    }
+
+    pub fn update_board(&mut self, algorithm: &str) {
+        if self.agents.is_empty() {
+            self.create_agents();
+        }
+        let mut grid = self.grid();
+        self.agents.iter_mut().for_each(|a| {
+            let (cur_loc, new_loc) = a.get_next_move(algorithm, &grid);
+            if let Some(tile) = grid.get_mut(&cur_loc) {
+                tile.change_tile_type(TileType::Floor);
+                if let Some(new_tile) = grid.get_mut(&new_loc) {
+                    new_tile.change_tile_type(TileType::Player);
+                }
+            }
+        });
+        self.cached_grid.borrow_mut().replace(grid);
+    }
 
     fn get_rect(&self) -> Rect {
         if self.cached_background.is_none() {
@@ -396,14 +448,14 @@ impl Board {
     }
     /// Draw Function for board
     pub fn draw<'a>(&self, canvas: &mut Canvas<Window>) {
-        let back_check = self.cached_background.is_none();
-        if back_check {
+        if self.cached_background.is_none() {
             canvas.set_draw_color(WHITE);
             canvas.fill_rect(self.get_rect()).unwrap();
         }
         let mut grid = self.grid();
+        println!("Starts: {:#?}\n Goals: {:#?}", self.starts, self.goals);
         for tile in grid.values_mut() {
-            tile.draw(back_check, self.location, canvas);
+            tile.draw(self.cached_background.is_none(), self.location, canvas);
         }
         self.cached_grid.borrow_mut().replace(grid);
     }
