@@ -26,6 +26,7 @@ pub struct Widget {
     pub buttons: HashMap<&'static str, Box<dyn Interface>>,
     pub layout: Vec<Vec<&'static str>>,
     pub drawn: bool,
+    pub important_component_clicked: bool,
     pub cached_interface_location: Option<HashMap<(i32, i32), &'static str>>,
     pub cached_draw_order: Option<Vec<&'static str>>,
 }
@@ -33,9 +34,20 @@ pub struct Widget {
 impl Widget {
     pub fn on_click(&mut self, mouse_state: Point) -> (Option<String>, (bool, Option<String>)) {
         let mut dirty = false;
-        let mut button_found: (Option<String>, (bool, Option<String>)) = (None, (false, None));
+        let mut result: (Option<String>, (bool, Option<String>)) = (None, (false, None));
 
-        if let Some(cached_map) = &self.cached_interface_location {
+        if self.important_component_clicked {
+            println!("Yes");
+            self.change_drawn(false);
+            for (_, button) in self.buttons.iter_mut().filter(|(_, b)| b.dirty_parent()) {
+                if button.on_click(mouse_state).0 {
+                    dirty = true;
+                    let button_id = button.get_id();
+                    result = (Some(button_id), button.on_click(mouse_state));
+                    break;
+                }
+            }
+        } else if let Some(cached_map) = &self.cached_interface_location {
             let rows = self.layout.len() as u32;
             let cols = self.layout[0].len() as u32;
             let cell_width = self.width / cols;
@@ -45,41 +57,47 @@ impl Widget {
             let relative_y = mouse_state.y() - self.location.y();
 
             if relative_x < 0 || relative_y < 0 {
-                return button_found;
+                return result;
             }
 
             let cell_x = relative_x / cell_width as i32;
             let cell_y = relative_y / cell_height as i32;
 
             if cell_x >= cols as i32 || cell_y >= rows as i32 {
-                return button_found;
+                return result;
             }
 
             let pos: (i32, i32) = (cell_x, cell_y);
-            println!("{:#?}", pos);
             if let Some(button_id) = cached_map.get(&pos) {
                 if let Some(button) = self.buttons.get_mut(button_id) {
-                    return (Some(button_id.to_string()), button.on_click(mouse_state));
+                    if button.dirty_parent() {
+                        dirty = true;
+                    }
+                    println!("S: {:#?}", button_id);
+                    result = (Some(button_id.to_string()), button.on_click(mouse_state));
                 }
             }
-        }
-        for (_, button) in self.buttons.iter_mut() {
-            if button.mouse_over_component(mouse_state) {
-                let button_id = button.get_id();
-                // Just set drawn to false directly if it was true
-                if button.dirty_parent() {
-                    dirty = true;
-                } else if button.is_drawn() {
-                    button.change_drawn(false);
+        } else {
+            for (_, button) in self.buttons.iter_mut() {
+                if button.mouse_over_component(mouse_state) {
+                    let button_id = button.get_id();
+                    println!("C: {}", button_id);
+                    if button.dirty_parent() {
+                        dirty = true;
+                    } else if button.is_drawn() {
+                        button.change_drawn(false);
+                    }
+                    result = (Some(button_id), button.on_click(mouse_state));
+                    break;
                 }
-                button_found = (Some(button_id), button.on_click(mouse_state));
-                break;
             }
         }
         if dirty {
+            self.important_component_clicked = !self.important_component_clicked;
+            println!("No");
             self.change_drawn(false);
         }
-        return button_found;
+        return result;
     }
 
     fn get_id(&self) -> String {
@@ -240,7 +258,15 @@ impl Widget {
         if let Some(button_ids) = &self.cached_draw_order {
             for id in button_ids {
                 if let Some(a) = self.buttons.get_mut(id) {
-                    a.change_active(self.active);
+                    if self.important_component_clicked {
+                        if a.dirty_parent() {
+                            a.change_active(true);
+                        } else {
+                            a.change_active(false);
+                        }
+                    } else {
+                        a.change_active(self.active);
+                    }
                     a.draw(canvas, texture_creator, mouse_state, font);
                 }
             }
@@ -253,7 +279,15 @@ impl Widget {
             });
             for id in &button_ids {
                 if let Some(a) = self.buttons.get_mut(id) {
-                    a.change_active(self.active);
+                    if self.important_component_clicked {
+                        if a.dirty_parent() {
+                            a.change_active(true);
+                        } else {
+                            a.change_active(false);
+                        }
+                    } else {
+                        a.change_active(self.active);
+                    }
                     a.draw(canvas, texture_creator, mouse_state, font);
                     a.change_drawn(true);
                 }

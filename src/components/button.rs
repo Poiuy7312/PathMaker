@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::time::Duration;
 
 use sdl2::mouse::MouseState;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -76,6 +77,7 @@ pub struct StandardButton {
 
 impl Component for StandardButton {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         return (
             self.mouse_over_component(mouse_position),
             Some(self.get_id()),
@@ -268,6 +270,10 @@ impl StandardButton {
     fn change_hover(&self, new_val: bool) {
         self.hover.replace(new_val);
     }
+
+    fn change_text(&mut self, new_val: &str) {
+        self.text = new_val.to_string();
+    }
     fn is_hovering(&self) -> bool {
         let hover = unsafe { *self.hover.as_ptr() };
         if hover {
@@ -297,25 +303,28 @@ pub struct Dropdown {
 
 impl Component for Dropdown {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         if self.mouse_over_component(mouse_position) {
             self.clicked_on = !self.clicked_on;
             return (true, None);
         }
-
         if self.clicked_on {
             self.options
                 .borrow_mut()
                 .iter_mut()
                 .for_each(|a| a.change_active(true));
-            let (option_clicked, checked_option) = self.check_options(mouse_position);
+            let (option_clicked, _) = self.check_options(mouse_position);
             if option_clicked {
-                return (true, checked_option);
+                self.clicked_on = false;
+                println!("{}", self.text);
+                return (true, Some(self.get_id()));
             }
         } else {
             self.options
                 .borrow_mut()
                 .iter_mut()
                 .for_each(|a| a.change_active(false));
+            return (false, None);
         }
 
         (false, None)
@@ -352,7 +361,6 @@ impl Component for Dropdown {
             self.active = false;
         }
         if !self.active {
-            self.clicked_on = false;
             self.options
                 .borrow_mut()
                 .iter_mut()
@@ -485,7 +493,6 @@ impl Interface for Dropdown {
 
         if self.clicked_on {
             self.layout_function();
-            println!("Dropdown clicked on");
             self.options.borrow_mut().iter_mut().for_each(|a| {
                 a.change_active(true);
                 a.draw(canvas, texture_creator, mouse_position, font);
@@ -601,6 +608,7 @@ impl Dropdown {
         for a in self.options.borrow_mut().iter_mut() {
             let (result, clicked_button) = a.on_click(mouse_position);
             if result {
+                (a.text, self.text) = (self.text.clone(), a.text.clone());
                 return (true, clicked_button);
             }
         }
@@ -626,6 +634,7 @@ impl Component for OptionButton {
     }
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         let mut cur_option: Option<String> = None;
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         self.options.borrow_mut().iter_mut().for_each(|(_, a)| {
             a.change_drawn(false);
             if a.get_rect(a.location).contains_point(mouse_position) {
@@ -810,6 +819,10 @@ pub struct CheckBox {
 
 impl Component for CheckBox {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
+        if !self.active {
+            return (false, None);
+        }
         if self.mouse_over_component(mouse_position) {
             self.checked = !self.checked;
             return (true, Some(self.get_id()));
