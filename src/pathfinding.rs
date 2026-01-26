@@ -22,6 +22,7 @@ pub trait PathfindingAlgorithm {
     fn name(&self) -> &str;
 }
 
+#[derive(Clone)]
 pub struct Agent {
     pub start: (i32, i32),
     pub goal: (i32, i32),
@@ -36,11 +37,10 @@ impl Agent {
         map: &HashMap<(i32, i32), Tile>,
     ) -> ((i32, i32), (i32, i32)) {
         if self.path.len() == 0 {
-            self.path = AStarSearch.find_path(self.start, self.goal, &map);
+            self.path = get_algorithm(algorithm).find_path(self.start, self.goal, &map);
         }
-        println!("{:#?}", self.path);
         let current_position = self.position;
-        println!("{:#?}", self.position);
+
         self.position = self.path.pop().expect("No moves given");
         return (current_position, self.position);
     }
@@ -50,10 +50,20 @@ impl Agent {
 }
 
 pub fn get_algorithm(algorithm: &str) -> Box<dyn PathfindingAlgorithm> {
-    match algorithm {
-        "A*" => return Box::new(AStarSearch),
-        "BFS" => return Box::new(BreadthFirstSearch),
-        _ => return Box::new(GreedySearch),
+    println!("{}", algorithm);
+    match algorithm.trim() {
+        "A* search" => {
+            println!("Using A star algorithm");
+            return Box::new(AStarSearch);
+        }
+        "Breadth First Search" => {
+            println!("Using BFS");
+            return Box::new(BreadthFirstSearch);
+        }
+        _ => {
+            println!("Using Greedy");
+            return Box::new(GreedySearch);
+        }
     }
 }
 
@@ -110,7 +120,6 @@ impl PathfindingAlgorithm for GreedySearch {
             }
         }
 
-        println!("Yepp");
         path.reverse();
         return path;
     }
@@ -153,7 +162,6 @@ impl PathfindingAlgorithm for BreadthFirstSearch {
                     node = prev;
                 }
                 path.reverse();
-                println!("{:#?}", path);
                 return path;
             }
 

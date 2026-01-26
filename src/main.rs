@@ -91,7 +91,7 @@ pub fn main() {
             text_color: WHITE,
             background_color: PRIMARY_COLOR,
             hover: RefCell::new(false),
-            text: "Select Path-finding Algorithm".to_string(),
+            text: "Greedy Search".to_string(),
             id: "Path_Selector".to_string(),
             active: false,
             clicked_on: false,
@@ -104,7 +104,7 @@ pub fn main() {
                     background_color: PRIMARY_COLOR,
                     hover: RefCell::new(false),
                     text: "Breadth First Search".to_string(),
-                    id: "bfsearch".to_string(),
+                    id: "Breadth First Search".to_string(),
                     filter: None,
                     active: false,
                     drawn: RefCell::new(false),
@@ -118,7 +118,7 @@ pub fn main() {
                     background_color: PRIMARY_COLOR,
                     hover: RefCell::new(false),
                     text: "A* search".to_string(),
-                    id: "A-star".to_string(),
+                    id: "A* search".to_string(),
                     filter: None,
                     active: false,
                     drawn: RefCell::new(false),
@@ -286,6 +286,13 @@ pub fn main() {
                     background_color: BLACK,
                 },
             ),
+            (
+                String::from("Weighted"),
+                InterfaceStyle {
+                    text_color: BLACK,
+                    background_color: YELLOW,
+                },
+            ),
         ],
         false,
     ));
@@ -360,6 +367,7 @@ pub fn main() {
         drawn: false,
         cached_draw_order: None,
         cached_interface_location: None,
+        important_component_clicked: false,
     };
 
     let save_layout: Vec<Vec<&'static str>> = vec![
@@ -395,6 +403,7 @@ pub fn main() {
         drawn: false,
         cached_draw_order: None,
         cached_interface_location: None,
+        important_component_clicked: false,
     };
 
     let search_file: Box<dyn Interface> = Box::new(InputBox {
@@ -466,6 +475,7 @@ pub fn main() {
         drawn: false,
         cached_draw_order: None,
         cached_interface_location: None,
+        important_component_clicked: false,
     };
 
     let mut event_pump = sdl_context.event_pump().unwrap();
@@ -521,7 +531,7 @@ pub fn main() {
         }
 
         if run_game_board {
-            game_board.update_board("A*");
+            game_board.update_board(&settings.selected_algorithm);
             game_board.draw(&mut canvas);
         }
 
@@ -674,6 +684,9 @@ pub fn main() {
                                 }
                                 "Obstacle" => {
                                     game_board.selected_piece_type = TileType::Obstacle;
+                                }
+                                "Weighted" => {
+                                    game_board.selected_piece_type = TileType::Weighted(100);
                                 }
                                 _ => {
                                     game_board.selected_piece_type = TileType::Floor;

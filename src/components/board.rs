@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::{fmt, fs};
+use std::sync::{Arc, Mutex};
+use std::{fmt, fs, thread, u8};
 
 extern crate sdl2;
 
+use rand::Rng;
 use sdl2::mouse::MouseState;
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
@@ -24,6 +26,7 @@ pub enum TileType {
     Floor,
     Player,
     Enemy,
+    Weighted(u8),
 }
 
 #[derive(Copy, Clone)]
@@ -32,6 +35,7 @@ pub struct Tile {
     tile_type: TileType,
     height: u32,
     width: u32,
+    weight: u8,
     dirty: bool,
     cached_rectangle: Option<Rect>,
 }
@@ -40,11 +44,12 @@ impl Serialize for Tile {
     where
         S: serde::Serializer,
     {
-        let mut state = serializer.serialize_struct("Tile", 5)?;
+        let mut state = serializer.serialize_struct("Tile", 6)?;
         state.serialize_field("position", &self.position)?;
         state.serialize_field("tile_type", &self.tile_type)?;
         state.serialize_field("height", &self.height)?;
         state.serialize_field("width", &self.width)?;
+        state.serialize_field("weight", &self.weight)?;
         state.serialize_field("dirty", &self.dirty)?;
         state.end()
     }
@@ -56,6 +61,7 @@ impl Tile {
         tile_type: TileType,
         height: u32,
         width: u32,
+        weight: u8,
         dirty: bool,
     ) -> Self {
         let position = (position.0 * width as i32, position.1 * height as i32);
@@ -66,6 +72,7 @@ impl Tile {
             width,
             dirty,
             cached_rectangle: None,
+            weight,
         }
     }
     fn get_rect(&self, board_origin: Point) -> Rect {
@@ -96,8 +103,12 @@ impl Tile {
                 canvas.fill_rect(tile_rect).unwrap();
                 self.dirty = false;
             }
-            TileType::Floor => {
-                canvas.set_draw_color(WHITE);
+            TileType::Floor | TileType::Weighted(_) => {
+                if self.weight > 1 {
+                    canvas.set_draw_color(Color::RGB(255, 255, 255 - self.weight as u8));
+                } else {
+                    canvas.set_draw_color(WHITE);
+                }
                 canvas.fill_rect(tile_rect).unwrap();
                 self.dirty = false;
             }
@@ -157,7 +168,7 @@ impl<'de> Deserialize<'de> for Board {
             tile_amount_y: u32,
             multiple_agents: bool,
             multiple_goals: bool,
-            tiles: Vec<[String; 2]>, // Array of [position, type]
+            tiles: Vec<[String; 3]>, // Array of [position, type, weight]
         }
 
         let data = BoardData::deserialize(deserializer)?;
@@ -168,9 +179,10 @@ impl<'de> Deserialize<'de> for Board {
         let tile_height = data.height / data.tile_amount_y;
 
         for tile_data in data.tiles {
-            println!("Yes");
+            //println!("Yes");
             let pos_str = &tile_data[0];
             let type_str = &tile_data[1];
+            let weight_str = &tile_data[2];
 
             let parts: Vec<&str> = pos_str.split(',').collect();
             if parts.len() == 2 {
@@ -182,11 +194,12 @@ impl<'de> Deserialize<'de> for Board {
                         "Enemy" => TileType::Enemy,
                         _ => TileType::Floor,
                     };
+                    let weight = weight_str.parse::<u8>().unwrap();
 
                     let pos = (x, y);
                     grid.insert(
                         pos,
-                        Tile::new(pos, tile_type, tile_height, tile_width, false),
+                        Tile::new(pos, tile_type, tile_height, tile_width, weight, false),
                     );
                 }
             }
@@ -225,9 +238,9 @@ impl Serialize for Board {
         state.serialize_field("multiple_agents", &self.multiple_agents)?;
         state.serialize_field("multiple_goals", &self.multiple_goals)?;
         let grid = self.grid();
-        let tiles: Vec<(String, TileType)> = grid
+        let tiles: Vec<(String, TileType, u8)> = grid
             .iter()
-            .map(|(pos, tile)| (format!("{},{}", pos.0, pos.1), tile.tile_type))
+            .map(|(pos, tile)| (format!("{},{}", pos.0, pos.1), tile.tile_type, tile.weight))
             .collect();
         state.serialize_field("tiles", &tiles)?;
         state.end()
@@ -306,8 +319,13 @@ impl Component for Board {
                             tile.change_tile_type(TileType::Player);
                         }
                     }
+                    TileType::Weighted(weight) => {
+                        tile.weight = weight;
+                        tile.dirty = true;
+                    }
                     _ => {}
                 }
+
                 self.cached_grid.borrow_mut().replace(grid);
                 return (true, Some(self.get_id()));
             }
@@ -377,9 +395,17 @@ impl Board {
         for i in 0..self.tile_amount_x {
             for j in 0..self.tile_amount_y {
                 let position: (i32, i32) = (i as i32, j as i32);
+                let num: u8 = 1;
                 grid.insert(
                     position,
-                    Tile::new(position, TileType::Floor, tile_height, tile_width, true),
+                    Tile::new(
+                        position,
+                        TileType::Floor,
+                        tile_height,
+                        tile_width,
+                        num,
+                        true,
+                    ),
                 );
             }
         }
@@ -397,7 +423,7 @@ impl Board {
 
     pub fn save_to_file(&self, filepath: &str) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self)?;
-        println!("{}", json);
+        //println!("{}", json);
         fs::write(filepath.to_owned() + "/test.json", json)?;
         Ok(())
     }
@@ -421,17 +447,56 @@ impl Board {
         if self.agents.is_empty() {
             self.create_agents();
         }
-        let mut grid = self.grid();
-        self.agents.iter_mut().for_each(|a| {
-            let (cur_loc, new_loc) = a.get_next_move(algorithm, &grid);
-            if let Some(tile) = grid.get_mut(&cur_loc) {
-                tile.change_tile_type(TileType::Floor);
-                if let Some(new_tile) = grid.get_mut(&new_loc) {
-                    new_tile.change_tile_type(TileType::Player);
+        let grid: HashMap<(i32, i32), Tile> = self.grid();
+        let grid_arc = Arc::new(Mutex::new(grid));
+        let mut handles = vec![];
+
+        // Spawn threads for each agent
+        for i in 0..self.agents.len() {
+            let grid_clone = Arc::clone(&grid_arc);
+            let algorithm_str = algorithm.to_string();
+            let mut agent_clone = self.agents[i].clone();
+
+            let handle = thread::spawn(move || {
+                // Get the next move from pathfinding algorithm
+                let grid_lock = grid_clone.lock().unwrap();
+                let (cur_loc, new_loc) = agent_clone.get_next_move(&algorithm_str, &grid_lock);
+                drop(grid_lock); // Release lock before updating
+
+                // Update grid with new positions
+                if let Ok(mut grid_guard) = grid_clone.lock() {
+                    if let Some(tile) = grid_guard.get_mut(&cur_loc) {
+                        if tile.tile_type != TileType::Enemy {
+                            tile.change_tile_type(TileType::Floor);
+                        }
+                    }
+                    if let Some(new_tile) = grid_guard.get_mut(&new_loc) {
+                        if new_tile.tile_type != TileType::Enemy {
+                            new_tile.change_tile_type(TileType::Player);
+                        }
+                    }
                 }
+
+                (i, agent_clone) // Return updated agent for main thread
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all threads to complete and collect results
+        for handle in handles {
+            if let Ok((index, updated_agent)) = handle.join() {
+                self.agents[index] = updated_agent;
             }
-        });
-        self.cached_grid.borrow_mut().replace(grid);
+        }
+
+        // Get updated grid from Arc
+        let final_grid = Arc::try_unwrap(grid_arc)
+            .unwrap_or_else(|_| panic!("Failed to get unique access to grid"))
+            .into_inner()
+            .unwrap();
+
+        self.cached_grid.borrow_mut().replace(final_grid);
     }
 
     fn get_rect(&self) -> Rect {
@@ -453,7 +518,7 @@ impl Board {
             canvas.fill_rect(self.get_rect()).unwrap();
         }
         let mut grid = self.grid();
-        println!("Starts: {:#?}\n Goals: {:#?}", self.starts, self.goals);
+        //println!("Starts: {:#?}\n Goals: {:#?}", self.starts, self.goals);
         for tile in grid.values_mut() {
             tile.draw(self.cached_background.is_none(), self.location, canvas);
         }
