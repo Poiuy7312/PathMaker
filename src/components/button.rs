@@ -11,7 +11,9 @@ use sdl2::surface::Surface;
 use sdl2::sys::False;
 use sdl2::video::{Window, WindowContext};
 
-use crate::colors::{BLACK, HOVER_COLOR, SECONDARY_COLOR, TERTIARY_COLOR, WHITE};
+use crate::colors::{
+    BLACK, HOVER_COLOR, PRIMARY_COLOR, QUATERNARY_COLOR, SECONDARY_COLOR, TERTIARY_COLOR, WHITE,
+};
 use crate::components::Component;
 
 use sdl2::ttf;
@@ -32,6 +34,7 @@ fn calculate_scaled_font_size(text_len: u32, available_width: u32) -> u32 {
 pub trait Interface: Component {
     fn get_rect(&self, point: Point) -> Rect;
     fn is_static(&self) -> bool;
+    fn has_indent(&self) -> bool;
     fn draw_priority(&self) -> bool;
     fn dirty_parent(&self) -> bool;
     fn draw<'a>(
@@ -131,6 +134,9 @@ impl Interface for StandardButton {
     }
 
     fn is_static(&self) -> bool {
+        false
+    }
+    fn has_indent(&self) -> bool {
         false
     }
 
@@ -391,6 +397,10 @@ impl Interface for Dropdown {
     fn is_static(&self) -> bool {
         true
     }
+    fn has_indent(&self) -> bool {
+        false
+    }
+
     fn draw_priority(&self) -> bool {
         false
     }
@@ -705,11 +715,14 @@ impl Interface for OptionButton {
     }
 
     fn is_static(&self) -> bool {
+        true
+    }
+    fn has_indent(&self) -> bool {
         false
     }
 
     fn draw_priority(&self) -> bool {
-        false
+        true
     }
     fn dirty_parent(&self) -> bool {
         false
@@ -811,7 +824,8 @@ pub struct CheckBox {
     pub label: String,
     pub checked: bool,
     pub location: Point,
-    pub size: u32,
+    pub height: u32,
+    pub width: u32,
     pub id: String,
     pub active: bool,
     pub drawn: RefCell<bool>,
@@ -852,19 +866,19 @@ impl Component for CheckBox {
     }
 
     fn change_width(&mut self, new_width: u32) {
-        self.size = new_width;
+        self.width = new_width;
     }
 
     fn get_width(&self) -> u32 {
-        self.size
+        self.width
     }
 
     fn get_height(&self) -> u32 {
-        self.size
+        self.height
     }
 
     fn change_height(&mut self, new_height: u32) {
-        self.size = new_height;
+        self.height = new_height;
     }
 
     fn mouse_over_component(&self, mouse_position: Point) -> bool {
@@ -875,7 +889,7 @@ impl Component for CheckBox {
 
 impl Interface for CheckBox {
     fn get_rect(&self, point: Point) -> Rect {
-        Rect::new(point.x(), point.y(), self.size, self.size)
+        Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
     fn draw_priority(&self) -> bool {
@@ -886,7 +900,10 @@ impl Interface for CheckBox {
     }
 
     fn is_static(&self) -> bool {
-        true
+        false
+    }
+    fn has_indent(&self) -> bool {
+        false
     }
 
     fn draw<'a>(
@@ -902,48 +919,38 @@ impl Interface for CheckBox {
 
         let button_background: Rect = self.get_rect(self.location);
 
-        let font_size = 8 * self.label.chars().count() as u32;
-        let button_outline =
-            Rect::from_center(button_background.center(), self.size + 5, self.size + 5);
+        let available_width = (self.width as i32 - 30) as u32;
+        let text_len = self.label.chars().count() as u32;
+        let font_size = calculate_scaled_font_size(text_len, available_width);
+        let checkbox_button = Rect::new(
+            button_background.x() + 5,
+            button_background.center().y(),
+            10,
+            10,
+        );
+        let checkbox_outline = Rect::from_center(checkbox_button.center(), 15, 15);
         let text_map = Rect::new(
-            button_background.right() + 5,
-            button_background.top(),
+            checkbox_button.right() + 5,
+            checkbox_button.top(),
             font_size,
-            button_background.height(),
+            checkbox_button.height(),
         );
-        let background: Rect = Rect::new(
-            button_background.left() - 2,
-            button_background.top() - 2,
-            (text_map.right() - button_background.left() + 4) as u32,
-            (button_background.height() + 4) as u32,
-        );
-        let mouse_position = mouse_position;
+
         font.set_style(sdl2::ttf::FontStyle::BOLD);
-        canvas.set_draw_color(SECONDARY_COLOR);
-        canvas.fill_rect(background).unwrap();
         canvas.set_draw_color(BLACK);
-        canvas.fill_rect(button_outline).unwrap();
+        canvas.fill_rect(checkbox_outline).unwrap();
 
         let font_surface: Surface<'_>;
 
         // render a surface, and convert it to a texture bound to the canvas
-        if self.mouse_over_component(mouse_position) {
-            canvas.set_draw_color(WHITE);
-            canvas.fill_rect(button_background).unwrap();
-            font_surface = font
-                .render(&self.label)
-                .blended(BLACK)
-                .map_err(|e| e.to_string())
-                .unwrap();
-        } else {
-            canvas.set_draw_color(WHITE);
-            canvas.fill_rect(button_background).unwrap();
-            font_surface = font
-                .render(&self.label)
-                .blended(BLACK)
-                .map_err(|e| e.to_string())
-                .unwrap();
-        }
+
+        canvas.set_draw_color(WHITE);
+        canvas.fill_rect(checkbox_button).unwrap();
+        font_surface = font
+            .render(&self.label)
+            .blended(BLACK)
+            .map_err(|e| e.to_string())
+            .unwrap();
 
         let font_texture: Texture<'_> = texture_creator
             .create_texture_from_surface(&font_surface)
@@ -953,7 +960,7 @@ impl Interface for CheckBox {
             .copy(&font_texture, None, text_map)
             .expect("Button unable to display text");
         if self.checked {
-            let lines = self.get_check_graphic(&button_background);
+            let lines = self.get_check_graphic(&checkbox_button);
             canvas.set_draw_color(BLACK);
 
             canvas.draw_lines(&lines.0[..]).unwrap();
@@ -982,21 +989,216 @@ impl CheckBox {
     fn get_check_graphic(&self, rect: &Rect) -> ([Point; 6], [Point; 6]) {
         (
             [
-                Point::new(self.location.x, self.location.y + 1),
+                Point::new(rect.x(), rect.y() + 1),
                 Point::new(rect.right(), rect.bottom() + 1),
-                Point::new(self.location.x, self.location.y),
+                Point::new(rect.x(), rect.y()),
                 Point::new(rect.right(), rect.bottom()),
-                Point::new(self.location.x, self.location.y - 1),
+                Point::new(rect.x(), rect.y() - 1),
                 Point::new(rect.right(), rect.bottom() - 1),
             ],
             [
-                Point::new(rect.right(), self.location.y + 1),
+                Point::new(rect.right(), rect.y() + 1),
                 Point::new(rect.left(), rect.bottom() + 1),
-                Point::new(rect.right(), self.location.y),
+                Point::new(rect.right(), rect.y()),
                 Point::new(rect.left(), rect.bottom()),
-                Point::new(rect.right(), self.location.y - 1),
+                Point::new(rect.right(), rect.y() - 1),
                 Point::new(rect.left(), rect.bottom() - 1),
             ],
         )
+    }
+}
+
+pub struct Slider {
+    pub height: u32,
+    pub width: u32,
+    pub location: Point,
+    pub text_color: Color,
+    pub background_color: Color,
+    pub text: String,
+    pub id: String,
+    pub active: bool,
+    pub range: u32,
+    pub slider_horizontal_axis: i32,
+    pub drawn: RefCell<bool>,
+    pub cached_texture: Option<Texture<'static>>,
+}
+
+impl Component for Slider {
+    fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
+        if !self.active {
+            return (false, None);
+        }
+        if self.mouse_over_component(mouse_position) {
+            self.change_slider_value(mouse_position);
+            return (true, Some(self.get_id()));
+        } else {
+            return (false, None);
+        }
+    }
+
+    fn get_id(&self) -> String {
+        return self.id.to_string();
+    }
+
+    fn change_location(&mut self, new_location: Point) {
+        self.location = new_location;
+        let mut slider_width = 10;
+        if self.width / self.range > 10 {
+            slider_width = self.width / self.range;
+        }
+        self.slider_horizontal_axis = new_location.x() + slider_width as i32 / 2;
+    }
+
+    fn change_active(&mut self, new_value: bool) {
+        self.active = new_value;
+    }
+
+    fn is_active(&self) -> bool {
+        return self.active;
+    }
+
+    fn get_location(&self) -> Point {
+        return self.location;
+    }
+
+    fn change_width(&mut self, new_width: u32) {
+        self.width = new_width;
+    }
+
+    fn get_width(&self) -> u32 {
+        self.width
+    }
+
+    fn get_height(&self) -> u32 {
+        self.height
+    }
+
+    fn change_height(&mut self, new_height: u32) {
+        self.height = new_height;
+    }
+
+    fn mouse_over_component(&self, mouse_position: Point) -> bool {
+        let component: Rect = self.get_rect(self.location);
+        return component.contains_point(mouse_position) && self.active;
+    }
+}
+
+impl Interface for Slider {
+    fn get_rect(&self, point: Point) -> Rect {
+        Rect::new(point.x(), point.y(), self.width, self.height)
+    }
+
+    fn is_static(&self) -> bool {
+        false
+    }
+
+    fn draw_priority(&self) -> bool {
+        true
+    }
+
+    fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn draw<'a>(
+        &self,
+        canvas: &mut Canvas<Window>,
+        texture_creator: &'a TextureCreator<WindowContext>,
+        mouse_position: Point,
+        font: &mut ttf::Font<'_, 'static>,
+    ) {
+        let button_background: Rect = self.get_rect(self.location);
+        let available_width = (self.width as i32 - 10) as u32;
+        let text_len = self.text.chars().count() as u32;
+        let font_size = calculate_scaled_font_size(text_len, available_width);
+        let button_outline =
+            Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
+        let mut text_map = Rect::new(
+            button_background.left() + 5,
+            button_background.top(),
+            font_size,
+            self.height / 2,
+        );
+        let slider_background = Rect::new(
+            button_background.x(),
+            text_map.bottom(),
+            self.width,
+            self.height / 2,
+        );
+        let slider_text = format!("{}: {}", self.text, self.get_slider_value());
+        let font_surface: Surface<'_>;
+        let slider = self.calc_slider(slider_background);
+        if text_map.width() >= button_background.width() {
+            text_map.set_width(button_background.width());
+        }
+        canvas.set_draw_color(BLACK);
+        canvas.fill_rect(button_outline).unwrap();
+        canvas.set_draw_color(SECONDARY_COLOR);
+        canvas.fill_rect(button_background).unwrap();
+        canvas.set_draw_color(HOVER_COLOR);
+        canvas.fill_rect(slider_background).unwrap();
+        font_surface = font
+            .render(&slider_text)
+            .blended(self.text_color)
+            .map_err(|e| e.to_string())
+            .unwrap();
+        let font_texture: Texture<'_> = texture_creator
+            .create_texture_from_surface(&font_surface)
+            .map_err(|e| e.to_string())
+            .unwrap();
+        canvas
+            .copy(&font_texture, None, text_map)
+            .expect("Button unable to display text");
+        canvas.set_draw_color(PRIMARY_COLOR);
+        canvas.fill_rect(slider).unwrap();
+    }
+
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn change_drawn(&self, new_val: bool) {
+        self.drawn.replace(new_val);
+    }
+
+    fn is_drawn(&self) -> bool {
+        let drawn = unsafe { *self.drawn.as_ptr() };
+        if drawn {
+            return true;
+        }
+        return false;
+    }
+
+    fn has_indent(&self) -> bool {
+        false
+    }
+}
+
+impl Slider {
+    fn calc_slider(&self, background: Rect) -> Rect {
+        let mut slider_width = 10;
+        if self.width / self.range > 10 {
+            slider_width = self.width / self.range;
+        }
+
+        let slider_location = Point::from((self.slider_horizontal_axis, background.center().y()));
+        Rect::from_center(slider_location, slider_width, background.height())
+    }
+
+    fn get_slider_value(&self) -> i32 {
+        let relative_location = self.slider_horizontal_axis - self.location.x();
+        let mut ratio = 1.0;
+        if self.range != self.width && self.width > 0 {
+            ratio = self.range as f32 / self.width as f32;
+        }
+        let value = (relative_location as f32 * ratio) as i32;
+        return value;
+    }
+    fn change_slider_value(&mut self, mouse_position: Point) {
+        let new_value = mouse_position.x();
+        if new_value != self.slider_horizontal_axis {
+            self.slider_horizontal_axis = new_value
+        }
+        println!("{}", self.get_slider_value());
     }
 }
