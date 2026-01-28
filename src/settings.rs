@@ -21,6 +21,7 @@ pub struct GameSettings {
     pub board_height: u32,
     pub tiles_x: u32,
     pub tiles_y: u32,
+    pub weight: u8,
 
     // File settings
     pub last_opened_file: Option<String>,
@@ -46,6 +47,7 @@ impl Default for GameSettings {
             last_opened_file: None,
             last_save_directory: String::from("/home"),
             auto_save_enabled: false,
+            weight: 1,
         }
     }
 }

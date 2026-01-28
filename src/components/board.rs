@@ -35,7 +35,7 @@ pub struct Tile {
     tile_type: TileType,
     height: u32,
     width: u32,
-    weight: u8,
+    pub weight: u8,
     dirty: bool,
     cached_rectangle: Option<Rect>,
 }
@@ -105,7 +105,11 @@ impl Tile {
             }
             TileType::Floor | TileType::Weighted(_) => {
                 if self.weight > 1 {
-                    canvas.set_draw_color(Color::RGB(255, 255, 255 - self.weight as u8));
+                    canvas.set_draw_color(Color::RGB(
+                        255,
+                        255 - (self.weight / 2) as u8,
+                        255 - self.weight as u8,
+                    ));
                 } else {
                     canvas.set_draw_color(WHITE);
                 }
