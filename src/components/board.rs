@@ -170,6 +170,8 @@ impl<'de> Deserialize<'de> for Board {
             width: u32,
             tile_amount_x: u32,
             tile_amount_y: u32,
+            starts: Vec<(i32, i32)>,
+            goals: Vec<(i32, i32)>,
             multiple_agents: bool,
             multiple_goals: bool,
             tiles: Vec<[String; 3]>, // Array of [position, type, weight]
@@ -223,8 +225,8 @@ impl<'de> Deserialize<'de> for Board {
             cached_background: None,
             cached_grid: RefCell::new(Some(grid)),
             agents: vec![],
-            goals: vec![],
-            starts: vec![],
+            goals: data.goals,
+            starts: data.starts,
         })
     }
 }
@@ -239,12 +241,20 @@ impl Serialize for Board {
         state.serialize_field("width", &self.width)?;
         state.serialize_field("tile_amount_x", &self.tile_amount_x)?;
         state.serialize_field("tile_amount_y", &self.tile_amount_y)?;
+        state.serialize_field("starts", &self.starts)?;
+        state.serialize_field("goals", &self.goals)?;
         state.serialize_field("multiple_agents", &self.multiple_agents)?;
         state.serialize_field("multiple_goals", &self.multiple_goals)?;
         let grid = self.grid();
-        let tiles: Vec<(String, TileType, u8)> = grid
+        let tiles: Vec<(String, TileType, String)> = grid
             .iter()
-            .map(|(pos, tile)| (format!("{},{}", pos.0, pos.1), tile.tile_type, tile.weight))
+            .map(|(pos, tile)| {
+                (
+                    format!("{},{}", pos.0, pos.1),
+                    tile.tile_type,
+                    format!("{}", tile.weight),
+                )
+            })
             .collect();
         state.serialize_field("tiles", &tiles)?;
         state.end()
@@ -399,7 +409,7 @@ impl Board {
         for i in 0..self.tile_amount_x {
             for j in 0..self.tile_amount_y {
                 let position: (i32, i32) = (i as i32, j as i32);
-                let num: u8 = 1;
+                let num: u8 = rand::rng().random_range(0..=255);
                 grid.insert(
                     position,
                     Tile::new(

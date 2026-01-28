@@ -730,6 +730,7 @@ pub fn main() {
                                                     fileDialog::read_file(&new_result),
                                                 );
                                                 select_file = false;
+                                                game_board.active = true;
                                                 game_board.draw(&mut canvas);
                                             }
                                         }
