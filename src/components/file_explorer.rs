@@ -38,6 +38,9 @@ impl Interface for FileExplorer {
     fn is_static(&self) -> bool {
         false
     }
+    fn has_indent(&self) -> bool {
+        false
+    }
 
     fn draw_priority(&self) -> bool {
         true

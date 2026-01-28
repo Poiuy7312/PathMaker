@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::time::Duration;
 
 use sdl2::mouse::MouseState;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -80,7 +79,6 @@ pub struct StandardButton {
 
 impl Component for StandardButton {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         return (
             self.mouse_over_component(mouse_position),
             Some(self.get_id()),
@@ -309,9 +307,12 @@ pub struct Dropdown {
 
 impl Component for Dropdown {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         if self.mouse_over_component(mouse_position) {
-            self.clicked_on = !self.clicked_on;
+            if self.clicked_on {
+                self.clicked_on = false;
+            } else {
+                self.clicked_on = true;
+            }
             return (true, None);
         }
         if self.clicked_on {
@@ -644,7 +645,6 @@ impl Component for OptionButton {
     }
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         let mut cur_option: Option<String> = None;
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         self.options.borrow_mut().iter_mut().for_each(|(_, a)| {
             a.change_drawn(false);
             if a.get_rect(a.location).contains_point(mouse_position) {
@@ -833,7 +833,6 @@ pub struct CheckBox {
 
 impl Component for CheckBox {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 30));
         if !self.active {
             return (false, None);
         }
@@ -1018,6 +1017,7 @@ pub struct Slider {
     pub id: String,
     pub active: bool,
     pub range: u32,
+    pub value: u32,
     pub slider_horizontal_axis: i32,
     pub drawn: RefCell<bool>,
     pub cached_texture: Option<Texture<'static>>,
@@ -1125,7 +1125,7 @@ impl Interface for Slider {
             self.width,
             self.height / 2,
         );
-        let slider_text = format!("{}: {}", self.text, self.get_slider_value());
+        let slider_text = format!("{}: {}", self.text, self.value);
         let font_surface: Surface<'_>;
         let slider = self.calc_slider(slider_background);
         if text_map.width() >= button_background.width() {
@@ -1176,29 +1176,35 @@ impl Interface for Slider {
 
 impl Slider {
     fn calc_slider(&self, background: Rect) -> Rect {
-        let mut slider_width = 10;
-        if self.width / self.range > 10 {
-            slider_width = self.width / self.range;
-        }
+        let slider_width = self.get_slider_width();
 
         let slider_location = Point::from((self.slider_horizontal_axis, background.center().y()));
         Rect::from_center(slider_location, slider_width, background.height())
     }
 
-    fn get_slider_value(&self) -> i32 {
-        let relative_location = self.slider_horizontal_axis - self.location.x();
-        let mut ratio = 1.0;
-        if self.range != self.width && self.width > 0 {
-            ratio = self.range as f32 / self.width as f32;
+    fn get_slider_width(&self) -> u32 {
+        if self.width / self.range > 10 {
+            return self.width / self.range;
         }
-        let value = (relative_location as f32 * ratio) as i32;
-        return value;
+        10
     }
+
     fn change_slider_value(&mut self, mouse_position: Point) {
         let new_value = mouse_position.x();
+        let slider_width = self.get_slider_width() as i32;
         if new_value != self.slider_horizontal_axis {
             self.slider_horizontal_axis = new_value
+                .max(self.location.x() + slider_width / 2)
+                .min(self.location.x() + self.width as i32 - slider_width / 2);
         }
-        println!("{}", self.get_slider_value());
+        let relative_location = self.slider_horizontal_axis - self.location.x() - slider_width / 2;
+        let mut ratio = 1.0;
+        if self.range != self.width && self.width > 0 {
+            ratio = self.range as f32 / (self.width - slider_width as u32) as f32;
+        }
+        // Makes sure value stays in-between possible range
+        self.value = ((relative_location as f32 * ratio) as u32)
+            .max(0)
+            .min(self.range);
     }
 }
