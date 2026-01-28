@@ -1,8 +1,10 @@
 use crate::components::board::Tile;
 use crate::settings::GameSettings;
+use jemalloc_ctl::{epoch, stats};
 use rand::seq::{IndexedRandom, SliceRandom};
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::time::Instant;
 
 /// Trait for custom pathfinding algorithms
 /// Implementers can create their own A*, Dijkstra, BFS, etc.
@@ -37,7 +39,19 @@ impl Agent {
         map: &HashMap<(i32, i32), Tile>,
     ) -> ((i32, i32), (i32, i32)) {
         if self.path.len() == 0 {
+            let now = Instant::now();
+            epoch::advance().unwrap();
+            let before = stats::allocated::read().unwrap();
+
+            // Call your function here
+
+            // Capture final stats
             self.path = get_algorithm(algorithm).find_path(self.start, self.goal, &map);
+            epoch::advance().unwrap();
+            let after = stats::allocated::read().unwrap();
+            let time = now.elapsed();
+            println!("Memory used: {} (bytes)", after - before);
+            println!("Elapsed: {:.2?}", time);
         }
         let current_position = self.position;
 
@@ -262,7 +276,12 @@ impl PathfindingAlgorithm for AStarSearch {
             for neighbor in neighbors {
                 if let Some(tile) = map.get(&neighbor) {
                     if tile.is_traversable() {
-                        let tentative_g = g_score.get(&current).unwrap_or(&i32::MAX) + 1;
+                        let move_cost = if tile.weight > 1 {
+                            tile.weight as i32
+                        } else {
+                            1
+                        };
+                        let tentative_g = g_score.get(&current).unwrap_or(&i32::MAX) + move_cost;
                         if tentative_g < *g_score.get(&neighbor).unwrap_or(&i32::MAX) {
                             parent.insert(neighbor, current);
                             g_score.insert(neighbor, tentative_g);
