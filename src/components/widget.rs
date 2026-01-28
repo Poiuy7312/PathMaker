@@ -37,17 +37,17 @@ impl Widget {
         let mut result: (Option<String>, (bool, Option<String>)) = (None, (false, None));
 
         if self.important_component_clicked {
-            println!("Yes");
             self.change_drawn(false);
             for (_, button) in self.buttons.iter_mut().filter(|(_, b)| b.dirty_parent()) {
-                if button.on_click(mouse_state).0 {
-                    dirty = true;
+                let result = button.on_click(mouse_state);
+                if result.0 {
+                    self.important_component_clicked = false;
                     let button_id = button.get_id();
-                    result = (Some(button_id), button.on_click(mouse_state));
-                    break;
+                    return (Some(button_id), result);
                 }
             }
-        } else if let Some(cached_map) = &self.cached_interface_location {
+        }
+        if let Some(cached_map) = &self.cached_interface_location {
             let rows = self.layout.len() as u32;
             let cols = self.layout[0].len() as u32;
             let cell_width = self.width / cols;
@@ -211,18 +211,25 @@ impl Widget {
                     // Component already placed, just extend dimensions
                     if let Some(component) = self.buttons.get_mut(key) {
                         if col > *start_col {
-                            component
-                                .change_width((col as u32 - *start_col as u32 + 1) * cell_width);
+                            if !component.is_static() {
+                                component.change_width(
+                                    (col as u32 - *start_col as u32 + 1) * cell_width,
+                                );
+                            }
                         }
                         if row > *start_row {
-                            component
-                                .change_height((row as u32 - *start_row as u32 + 1) * cell_height);
+                            if !component.is_static() {
+                                component.change_height(
+                                    (row as u32 - *start_row as u32 + 1) * cell_height,
+                                );
+                            }
                         }
                     }
                 } else {
                     // First time seeing this component
                     if let Some(component) = self.buttons.get_mut(key) {
-                        let x_offset = if component.is_static() { 5 } else { 0 };
+                        let x_offset = if component.has_indent() { 5 } else { 0 };
+
                         component.change_location(Point::new(loc.0 + x_offset, loc.1));
 
                         found_components.insert(key, (row, col));
