@@ -1,4 +1,5 @@
 extern crate sdl2;
+use jemalloc_ctl::{epoch, stats};
 use sdl2::event::Event;
 use sdl2::gfx;
 use sdl2::image::LoadSurface;
@@ -13,6 +14,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
+
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 // mod button;
 mod colors;
@@ -69,6 +73,8 @@ pub fn main() {
         .expect("Unable to Load Font");
 
     /*----- File Explorer Components ----- */
+
+    let mut mouse_clicked_on: bool = false;
 
     let controls_width = window_width * 1 / 5;
 
@@ -130,11 +136,28 @@ pub fn main() {
         })
     };
 
+    let weight_value: Box<dyn Interface> = Box::new(Slider {
+        height: 0,
+        width: 0,
+        location: Point::new(0, 0),
+        text_color: BLACK,
+        background_color: SECONDARY_COLOR,
+        text: "Weight".to_string(),
+        id: "Weight".to_string(),
+        active: false,
+        range: 255,
+        slider_horizontal_axis: 0,
+        drawn: RefCell::new(false),
+        cached_texture: None,
+        value: 0,
+    });
+
     let DG_Check: Box<dyn Interface> = Box::new(CheckBox {
         label: "Dynamic Generation".to_string(),
         checked: false,
         location: Point::new(40, 40),
-        size: 10,
+        height: 0,
+        width: 0,
         id: "DG_Select".to_string(),
         active: true,
         drawn: RefCell::new(false),
@@ -144,7 +167,8 @@ pub fn main() {
         label: "Doubling Experiment".to_string(),
         checked: false,
         location: Point::new(40, 40),
-        size: 10,
+        height: 0,
+        width: 0,
         id: "DE_Select".to_string(),
         active: true,
         drawn: RefCell::new(false),
@@ -154,17 +178,19 @@ pub fn main() {
         label: "Multiple Agents".to_string(),
         checked: false,
         location: Point::new(40, 40),
-        size: 10,
         id: "MA_Select".to_string(),
         active: true,
         drawn: RefCell::new(false),
+        height: 0,
+        width: 0,
     });
 
     let MG_Check: Box<dyn Interface> = Box::new(CheckBox {
         label: "Multiple Goals".to_string(),
         checked: false,
         location: Point::new(40, 40),
-        size: 10,
+        height: 0,
+        width: 0,
         id: "MG_Select".to_string(),
         active: true,
         drawn: RefCell::new(false),
@@ -290,7 +316,7 @@ pub fn main() {
                 String::from("Weighted"),
                 InterfaceStyle {
                     text_color: BLACK,
-                    background_color: YELLOW,
+                    background_color: Color::RGB(255, 140, 0),
                 },
             ),
         ],
@@ -334,6 +360,7 @@ pub fn main() {
         vec!["Save Map"],
         vec!["Piece_Select"],
         vec!["Path_Selector"],
+        vec!["Weight"],
         vec!["DG_Select"],
         vec!["DE_Select"],
         vec!["MA_Select"],
@@ -353,6 +380,7 @@ pub fn main() {
         ("MG_Select", MG_Check),
         ("Path_Selector", path_selector),
         ("Piece_Select", piece_select),
+        ("Weight", weight_value),
     ]);
 
     let mut board_control_widget: Widget = Widget {
@@ -600,6 +628,30 @@ pub fn main() {
 
         /*-------- Handle Component Inputs --------*/
         if mouse_state.left() {
+            if game_board.on_click(mouse_position).0 {
+                game_board.draw(&mut canvas);
+            }
+            mouse_clicked_on = true;
+            if !select_file {
+                if let Some(slider) = board_control_widget.buttons.get_mut("Weight") {
+                    if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
+                        if sl.on_click(mouse_position).0 {
+                            settings.weight = sl.value.max(1) as u8;
+                            match game_board.selected_piece_type {
+                                TileType::Player => {}
+                                TileType::Enemy => {}
+                                TileType::Floor => {}
+                                TileType::Obstacle => {}
+                                _ => {
+                                    game_board.selected_piece_type =
+                                        TileType::Weighted(settings.weight)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else if mouse_clicked_on {
             if save_file {
                 let (clicked_button, (_, inner_button_clicked)) =
                     save_widget.on_click(mouse_position);
@@ -614,6 +666,7 @@ pub fn main() {
                                 save_file = false;
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
+                                game_board.change_active(true);
                                 game_board.draw(&mut canvas);
                             }
                             "Save_Wid_Save" => {
@@ -623,6 +676,7 @@ pub fn main() {
                                 save_file = false;
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
+                                game_board.change_active(true);
                                 game_board.draw(&mut canvas);
                             }
                             "Save_File_Exp" => {
@@ -646,11 +700,57 @@ pub fn main() {
                     }
                     None => {}
                 };
-            }
+            } else if select_file {
+                let (clicked_button, (_, inner_button_clicked)) =
+                    file_select_widget.on_click(mouse_position);
+                match clicked_button {
+                    Some(button) => {
+                        //file_select_widget.change_drawn(false);
+                        match button.as_str() {
+                            "Search_File" => {
+                                video_subsystem.text_input().start();
+                            }
+                            "Select_File_Exp" => {
+                                if inner_button_clicked.is_some() {
+                                    if let Some(file_exp) =
+                                        file_select_widget.buttons.get_mut("Select_File_Exp")
+                                    {
+                                        if let Some(button) =
+                                            file_exp.as_any().downcast_mut::<FileExplorer>()
+                                        {
+                                            let new_result = inner_button_clicked.expect("Nope");
 
-            if game_board.on_click(mouse_position).0 {
-                game_board.draw(&mut canvas);
-            } else if !select_file {
+                                            button.change_display(new_result.clone());
+                                            file_select_widget
+                                                .change_result(Some(new_result.clone()));
+                                            if !fileDialog::is_directory(&new_result) {
+                                                file_select_widget
+                                                    .change_result(Some(home_dir.clone()));
+                                                game_board = game_board.load_board_file(
+                                                    fileDialog::read_file(&new_result),
+                                                );
+                                                select_file = false;
+                                                game_board.draw(&mut canvas);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            "Back" => {
+                                file_select_widget.change_active(false);
+                                select_file = false;
+                                canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                canvas.clear();
+                                file_select_widget.change_result(Some(home_dir.clone()));
+                                game_board.change_active(true);
+                                game_board.draw(&mut canvas);
+                            }
+                            _ => {}
+                        }
+                    }
+                    None => {}
+                }
+            } else {
                 let (clicked_button, (_, inner_button_clicked)) =
                     board_control_widget.on_click(mouse_position);
                 match clicked_button {
@@ -686,7 +786,8 @@ pub fn main() {
                                     game_board.selected_piece_type = TileType::Obstacle;
                                 }
                                 "Weighted" => {
-                                    game_board.selected_piece_type = TileType::Weighted(100);
+                                    game_board.selected_piece_type =
+                                        TileType::Weighted(settings.weight);
                                 }
                                 _ => {
                                     game_board.selected_piece_type = TileType::Floor;
@@ -694,6 +795,22 @@ pub fn main() {
                             },
                             None => {}
                         },
+                        "Weight" => {
+                            if let Some(slider) = board_control_widget.buttons.get_mut("Weight") {
+                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
+                                    settings.weight = sl.value.max(1) as u8;
+                                    match game_board.selected_piece_type {
+                                        TileType::Player => {}
+                                        TileType::Enemy => {}
+                                        TileType::Floor => {}
+                                        _ => {
+                                            game_board.selected_piece_type =
+                                                TileType::Weighted(settings.weight)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         "DG_Select" => {
                             if let Some(checkbox) =
                                 board_control_widget.buttons.get_mut("DG_Select")
@@ -745,56 +862,8 @@ pub fn main() {
                     },
                     None => {}
                 }
-            } else {
-                let (clicked_button, (_, inner_button_clicked)) =
-                    file_select_widget.on_click(mouse_position);
-                match clicked_button {
-                    Some(button) => {
-                        //file_select_widget.change_drawn(false);
-                        match button.as_str() {
-                            "Search_File" => {
-                                video_subsystem.text_input().start();
-                            }
-                            "Select_File_Exp" => {
-                                if inner_button_clicked.is_some() {
-                                    if let Some(file_exp) =
-                                        file_select_widget.buttons.get_mut("Select_File_Exp")
-                                    {
-                                        if let Some(button) =
-                                            file_exp.as_any().downcast_mut::<FileExplorer>()
-                                        {
-                                            let new_result = inner_button_clicked.expect("Nope");
-
-                                            button.change_display(new_result.clone());
-                                            file_select_widget
-                                                .change_result(Some(new_result.clone()));
-                                            if !fileDialog::is_directory(&new_result) {
-                                                file_select_widget
-                                                    .change_result(Some(home_dir.clone()));
-                                                game_board = game_board.load_board_file(
-                                                    fileDialog::read_file(&new_result),
-                                                );
-                                                select_file = false;
-                                                game_board.draw(&mut canvas);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            "Back" => {
-                                file_select_widget.change_active(false);
-                                select_file = false;
-                                canvas.set_draw_color(Color::RGB(87, 87, 81));
-                                canvas.clear();
-                                file_select_widget.change_result(Some(home_dir.clone()));
-                                game_board.draw(&mut canvas);
-                            }
-                            _ => {}
-                        }
-                    }
-                    None => {}
-                }
             }
+            mouse_clicked_on = false;
         }
         /*-------- Handle Component Inputs -------- */
 
@@ -894,6 +963,5 @@ pub fn main() {
         //let obs_y: u32 = rand::thread_rng().gen_range(0..tiles_y);
         //let obs_x: u32 = rand::thread_rng().gen_range(0..tiles_x);
         /*-------- Updates values for board Generation -------- */
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
     }
 }
