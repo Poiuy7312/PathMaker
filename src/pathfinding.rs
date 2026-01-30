@@ -1,9 +1,14 @@
 use crate::components::board::Tile;
 use crate::settings::GameSettings;
-use jemalloc_ctl::{epoch, stats};
+use jemalloc_ctl::{epoch, stats, thread};
 use rand::seq::{IndexedRandom, SliceRandom};
+use sdl2::sys::LeaveNotify;
+use serde::Serialize;
 use std::cell::RefCell;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::time::Instant;
 
 /// Trait for custom pathfinding algorithms
@@ -18,7 +23,7 @@ pub trait PathfindingAlgorithm {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
-    ) -> Vec<(i32, i32)>;
+    ) -> (Vec<(i32, i32)>, u128);
 
     /// Get the name of this algorithm (for debugging/UI)
     fn name(&self) -> &str;
@@ -32,6 +37,16 @@ pub struct Agent {
     pub path: Vec<(i32, i32)>,
 }
 
+fn get_overall_path_weight(path: &Vec<(i32, i32)>, map: &HashMap<(i32, i32), Tile>) -> u128 {
+    let mut total_weight: u128 = 0;
+    for moves in path {
+        if let Some(tile) = map.get(&moves) {
+            total_weight += tile.weight as u128;
+        }
+    }
+    return total_weight;
+}
+
 impl Agent {
     pub fn get_next_move(
         &mut self,
@@ -39,27 +54,89 @@ impl Agent {
         map: &HashMap<(i32, i32), Tile>,
     ) -> ((i32, i32), (i32, i32)) {
         if self.path.len() == 0 {
+            let allocated = thread::allocatedp::mib().unwrap();
+            let mut all_possible_move: Vec<&(i32, i32)> = vec![];
+            for (loc, tile) in map {
+                if tile.is_traversable() {
+                    all_possible_move.push(loc);
+                }
+            }
+
             let now = Instant::now();
             epoch::advance().unwrap();
-            let before = stats::allocated::read().unwrap();
-
+            let before = allocated.read().unwrap().get();
             // Call your function here
 
             // Capture final stats
-            self.path = get_algorithm(algorithm).find_path(self.start, self.goal, &map);
+            let (path, steps) = get_algorithm(algorithm).find_path(self.start, self.goal, &map);
             epoch::advance().unwrap();
-            let after = stats::allocated::read().unwrap();
+            let after = allocated.read().unwrap().get();
             let time = now.elapsed();
+
             println!("Memory used: {} (bytes)", after - before);
             println!("Elapsed: {:.2?}", time);
+            println!("Steps: {}", steps);
+            println!("Path Value: {}", get_overall_path_weight(&path, map));
+            self.path = path;
         }
         let current_position = self.position;
-
-        self.position = self.path.pop().expect("No moves given");
+        if self.path.len() > 0 {
+            self.position = self.path.pop().expect("No move given")
+        }
         return (current_position, self.position);
     }
     pub fn get_goal(&self) -> (i32, i32) {
         return self.goal;
+    }
+    pub fn is_path_possible(
+        &self,
+        map: &HashMap<(i32, i32), crate::components::board::Tile>,
+    ) -> bool {
+        let start = self.start;
+        let goal = self.goal;
+        if start == goal {
+            return true;
+        }
+
+        let mut queue = VecDeque::new();
+        let mut visited = std::collections::HashSet::new();
+        let mut parent: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
+
+        queue.push_back(self.start);
+        visited.insert(start);
+
+        let mut steps = 0;
+
+        while let Some(current) = queue.pop_front() {
+            if steps >= map.len() as u128 {
+                break;
+            }
+            steps += 1;
+            if current == goal {
+                // reconstruct path
+                return true;
+            }
+
+            // get neighbors
+            let neighbors = vec![
+                (current.0 + 1, current.1),
+                (current.0, current.1 + 1),
+                (current.0.saturating_sub(1), current.1),
+                (current.0, current.1.saturating_sub(1)),
+            ];
+
+            for neighbor in neighbors {
+                if let Some(tile) = map.get(&neighbor) {
+                    if tile.is_traversable() && !visited.contains(&neighbor) {
+                        visited.insert(neighbor);
+                        parent.insert(neighbor, current);
+                        queue.push_back(neighbor);
+                    }
+                }
+            }
+        }
+
+        false // no path found
     }
 }
 
@@ -89,11 +166,13 @@ impl PathfindingAlgorithm for GreedySearch {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
-    ) -> Vec<(i32, i32)> {
+    ) -> (Vec<(i32, i32)>, u128) {
         let mut current = start;
         let mut path: Vec<(i32, i32)> = vec![];
         let mut black_list: Vec<(i32, i32)> = vec![];
+        let mut steps: u128 = 0;
         while current != goal {
+            steps += 1;
             let mut good_moves: Vec<(i32, i32)> = vec![];
             let mut bad_moves: Vec<(i32, i32)> = vec![];
             let mut neighbors = vec![
@@ -135,7 +214,7 @@ impl PathfindingAlgorithm for GreedySearch {
         }
 
         path.reverse();
-        return path;
+        return (path, steps);
     }
 
     fn name(&self) -> &str {
@@ -152,11 +231,9 @@ impl PathfindingAlgorithm for BreadthFirstSearch {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), Tile>,
-    ) -> Vec<(i32, i32)> {
-        use std::collections::VecDeque;
-
+    ) -> (Vec<(i32, i32)>, u128) {
         if start == goal {
-            return vec![start];
+            return (vec![start], 1);
         }
 
         let mut queue = VecDeque::new();
@@ -166,7 +243,10 @@ impl PathfindingAlgorithm for BreadthFirstSearch {
         queue.push_back(start);
         visited.insert(start);
 
+        let mut steps = 0;
+
         while let Some(current) = queue.pop_front() {
+            steps += 1;
             if current == goal {
                 // reconstruct path
                 let mut path = vec![goal];
@@ -175,8 +255,7 @@ impl PathfindingAlgorithm for BreadthFirstSearch {
                     path.push(prev);
                     node = prev;
                 }
-                path.reverse();
-                return path;
+                return (path, steps);
             }
 
             // get neighbors
@@ -198,7 +277,7 @@ impl PathfindingAlgorithm for BreadthFirstSearch {
             }
         }
 
-        vec![] // no path found
+        (vec![], steps) // no path found
     }
 
     fn name(&self) -> &str {
@@ -215,10 +294,7 @@ impl PathfindingAlgorithm for AStarSearch {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
-    ) -> Vec<(i32, i32)> {
-        use std::cmp::Ordering;
-        use std::collections::BinaryHeap;
-
+    ) -> (Vec<(i32, i32)>, u128) {
         #[derive(Clone, Eq, PartialEq)]
         struct Node {
             cost: i32,
@@ -251,10 +327,13 @@ impl PathfindingAlgorithm for AStarSearch {
         });
         g_score.insert(start, 0);
 
+        let mut steps: u128 = 0;
+
         while let Some(Node {
             position: current, ..
         }) = open_set.pop()
         {
+            steps += 1;
             if current == goal {
                 // reconstruct path
                 let mut path = vec![goal];
@@ -263,7 +342,7 @@ impl PathfindingAlgorithm for AStarSearch {
                     path.push(prev);
                     node = prev;
                 }
-                return path;
+                return (path, steps);
             }
 
             let neighbors = vec![
@@ -296,7 +375,7 @@ impl PathfindingAlgorithm for AStarSearch {
             }
         }
 
-        vec![] // no path found
+        (vec![], steps) // no path found
     }
 
     fn name(&self) -> &str {

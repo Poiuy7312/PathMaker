@@ -409,7 +409,7 @@ impl Board {
         for i in 0..self.tile_amount_x {
             for j in 0..self.tile_amount_y {
                 let position: (i32, i32) = (i as i32, j as i32);
-                let num: u8 = rand::rng().random_range(0..=255);
+                let num: u8 = 1; //rand::rng().random_range(0..=255);
                 grid.insert(
                     position,
                     Tile::new(
@@ -474,34 +474,49 @@ impl Board {
             let handle = thread::spawn(move || {
                 // Get the next move from pathfinding algorithm
                 let grid_lock = grid_clone.lock().unwrap();
-                let (cur_loc, new_loc) = agent_clone.get_next_move(&algorithm_str, &grid_lock);
-                drop(grid_lock); // Release lock before updating
+                if agent_clone.is_path_possible(&grid_lock) {
+                    let (cur_loc, new_loc) = agent_clone.get_next_move(&algorithm_str, &grid_lock);
+                    drop(grid_lock); // Release lock before updating
 
-                // Update grid with new positions
-                if let Ok(mut grid_guard) = grid_clone.lock() {
-                    if let Some(tile) = grid_guard.get_mut(&cur_loc) {
-                        if tile.tile_type != TileType::Enemy {
-                            tile.change_tile_type(TileType::Floor);
+                    // Update grid with new positions
+                    if let Ok(mut grid_guard) = grid_clone.lock() {
+                        if let Some(tile) = grid_guard.get_mut(&cur_loc) {
+                            if tile.tile_type != TileType::Enemy {
+                                tile.change_tile_type(TileType::Floor);
+                            }
+                        }
+                        if let Some(new_tile) = grid_guard.get_mut(&new_loc) {
+                            if new_tile.tile_type != TileType::Enemy {
+                                new_tile.change_tile_type(TileType::Player);
+                            }
                         }
                     }
-                    if let Some(new_tile) = grid_guard.get_mut(&new_loc) {
-                        if new_tile.tile_type != TileType::Enemy {
-                            new_tile.change_tile_type(TileType::Player);
-                        }
-                    }
-                }
 
-                (i, agent_clone) // Return updated agent for main thread
+                    (i, agent_clone, true)
+                } else {
+                    drop(grid_lock);
+                    println!("Path isn't possible");
+                    (i, agent_clone, false)
+                } // Return updated agent for main thread
             });
 
             handles.push(handle);
         }
 
         // Wait for all threads to complete and collect results
+        let mut indices_to_remove: Vec<usize> = vec![];
         for handle in handles {
-            if let Ok((index, updated_agent)) = handle.join() {
-                self.agents[index] = updated_agent;
+            if let Ok((index, updated_agent, path_found)) = handle.join() {
+                if !path_found {
+                    indices_to_remove.push(index);
+                } else {
+                    self.agents[index] = updated_agent;
+                }
             }
+        }
+        indices_to_remove.sort_by(|a, b| b.cmp(a));
+        for index in indices_to_remove {
+            self.agents.remove(index);
         }
 
         // Get updated grid from Arc
