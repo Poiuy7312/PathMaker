@@ -94,7 +94,9 @@ impl Component for StandardButton {
         return self.id.to_string();
     }
     fn change_location(&mut self, new_location: Point) {
-        self.location = new_location;
+        if new_location != self.location {
+            self.location = new_location;
+        }
     }
     fn get_location(&self) -> Point {
         self.location
@@ -347,7 +349,9 @@ impl Component for Dropdown {
     }
 
     fn change_location(&mut self, new_location: Point) {
-        self.location = new_location;
+        if new_location != self.location {
+            self.location = new_location;
+        }
     }
 
     fn get_location(&self) -> Point {
@@ -668,15 +672,17 @@ impl Component for OptionButton {
     }
 
     fn change_location(&mut self, new_location: Point) {
-        let mut count = 0;
-        self.location = new_location;
-        self.options.borrow_mut().iter_mut().for_each(|(_, b)| {
-            b.change_location(Point::new(
-                new_location.x() + count * b.width as i32,
-                new_location.y(),
-            ));
-            count += 1;
-        })
+        if new_location != self.location {
+            let mut count = 0;
+            self.location = new_location;
+            self.options.borrow_mut().iter_mut().for_each(|(_, b)| {
+                b.change_location(Point::new(
+                    new_location.x() + count * b.width as i32,
+                    new_location.y(),
+                ));
+                count += 1;
+            })
+        }
     }
 
     fn get_location(&self) -> Point {
@@ -849,7 +855,9 @@ impl Component for CheckBox {
     }
 
     fn change_location(&mut self, new_location: Point) {
-        self.location = new_location;
+        if new_location != self.location {
+            self.location = new_location;
+        }
     }
 
     fn change_active(&mut self, new_value: bool) {
@@ -1041,12 +1049,16 @@ impl Component for Slider {
     }
 
     fn change_location(&mut self, new_location: Point) {
-        self.location = new_location;
-        let mut slider_width = 10;
-        if self.width / self.range > 10 {
-            slider_width = self.width / self.range;
+        if new_location != self.location {
+            let slider_dif = (self.location.x() - self.slider_horizontal_axis).abs();
+            let new_x = new_location.x();
+            self.location = new_location;
+            let mut slider_width = 10;
+            if self.width / self.range > 10 {
+                slider_width = self.width / self.range;
+            }
+            self.slider_horizontal_axis = (new_x + slider_width as i32 / 2).max(new_x + slider_dif);
         }
-        self.slider_horizontal_axis = new_location.x() + slider_width as i32 / 2;
     }
 
     fn change_active(&mut self, new_value: bool) {
