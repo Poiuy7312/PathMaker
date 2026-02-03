@@ -5,6 +5,7 @@ use std::{fmt, fs, thread, u8};
 
 extern crate sdl2;
 
+use rand::seq::IteratorRandom;
 use rand::Rng;
 use sdl2::mouse::MouseState;
 use sdl2::pixels::Color;
@@ -131,6 +132,9 @@ impl Tile {
 
     pub fn is_traversable(&self) -> bool {
         return self.tile_type != TileType::Obstacle;
+    }
+    pub fn is_floor(&self) -> bool {
+        return self.tile_type == TileType::Floor;
     }
 
     fn change_tile_type(&mut self, new_type: TileType) {
@@ -435,6 +439,70 @@ impl Board {
         self.height / self.tile_amount_y
     }
 
+    pub fn generate_random_grid(&self, weight_range: u8, obstacle_number: usize) {
+        let mut grid = HashMap::new();
+        let tile_width = self.tile_width();
+        let tile_height = self.tile_height();
+        let mut rng = rand::rng();
+        for i in 0..self.tile_amount_x {
+            for j in 0..self.tile_amount_y {
+                let position: (i32, i32) = (i as i32, j as i32);
+                let num: u8 = rng.random_range(0..=weight_range);
+                if self.starts.contains(&position) {
+                    grid.insert(
+                        position,
+                        Tile::new(
+                            position,
+                            TileType::Player,
+                            tile_height,
+                            tile_width,
+                            num,
+                            true,
+                        ),
+                    );
+                } else if self.goals.contains(&position) {
+                    grid.insert(
+                        position,
+                        Tile::new(
+                            position,
+                            TileType::Enemy,
+                            tile_height,
+                            tile_width,
+                            num,
+                            true,
+                        ),
+                    );
+                } else {
+                    grid.insert(
+                        position,
+                        Tile::new(
+                            position,
+                            TileType::Floor,
+                            tile_height,
+                            tile_width,
+                            num,
+                            true,
+                        ),
+                    );
+                }
+            }
+        }
+
+        let new_grid = grid.clone();
+        let selected: Vec<&(i32, i32)> = new_grid
+            .iter()
+            .filter(|(_, t)| t.is_floor())
+            .map(|a| a.0)
+            .choose_multiple(&mut rng, obstacle_number);
+
+        for tiles in selected {
+            if let Some(tile) = grid.get_mut(tiles) {
+                tile.change_tile_type(TileType::Obstacle);
+            }
+        }
+        self.cached_grid.borrow_mut().replace(grid);
+    }
+
     pub fn save_to_file(&self, filepath: &str) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self)?;
         //println!("{}", json);
@@ -460,72 +528,62 @@ impl Board {
     pub fn update_board(&mut self, algorithm: &str) {
         if self.agents.is_empty() {
             self.create_agents();
+            self.generate_random_grid(100, 400);
         }
-        let grid: HashMap<(i32, i32), Tile> = self.grid();
-        let grid_arc = Arc::new(Mutex::new(grid));
+        let mut grid: HashMap<(i32, i32), Tile> = self.grid();
         let mut handles = vec![];
 
-        // Spawn threads for each agent
+        // Spawn threads - each gets its own grid copy
         for i in 0..self.agents.len() {
-            let grid_clone = Arc::clone(&grid_arc);
+            let grid_clone = grid.clone(); // No Arc<Mutex>, just clone
             let algorithm_str = algorithm.to_string();
             let mut agent_clone = self.agents[i].clone();
 
             let handle = thread::spawn(move || {
-                // Get the next move from pathfinding algorithm
-                let grid_lock = grid_clone.lock().unwrap();
-                if agent_clone.is_path_possible(&grid_lock) {
-                    let (cur_loc, new_loc) = agent_clone.get_next_move(&algorithm_str, &grid_lock);
-                    drop(grid_lock); // Release lock before updating
-
-                    // Update grid with new positions
-                    if let Ok(mut grid_guard) = grid_clone.lock() {
-                        if let Some(tile) = grid_guard.get_mut(&cur_loc) {
-                            if tile.tile_type != TileType::Enemy {
-                                tile.change_tile_type(TileType::Floor);
-                            }
-                        }
-                        if let Some(new_tile) = grid_guard.get_mut(&new_loc) {
-                            if new_tile.tile_type != TileType::Enemy {
-                                new_tile.change_tile_type(TileType::Player);
-                            }
-                        }
-                    }
-
-                    (i, agent_clone, true)
+                if agent_clone.is_path_possible(&grid_clone) && !agent_clone.goal_reached() {
+                    let (cur_loc, new_loc) = agent_clone.get_next_move(&algorithm_str, &grid_clone);
+                    (i, agent_clone, new_loc, cur_loc, true)
                 } else {
-                    drop(grid_lock);
-                    println!("Path isn't possible");
-                    (i, agent_clone, false)
-                } // Return updated agent for main thread
+                    (i, agent_clone, (0, 0), (0, 0), false)
+                }
             });
-
             handles.push(handle);
         }
 
-        // Wait for all threads to complete and collect results
+        // Collect results and update board on main thread
         let mut indices_to_remove: Vec<usize> = vec![];
+
         for handle in handles {
-            if let Ok((index, updated_agent, path_found)) = handle.join() {
+            if let Ok((index, updated_agent, new_loc, cur_loc, path_found)) = handle.join() {
                 if !path_found {
                     indices_to_remove.push(index);
                 } else {
+                    // Update agent
                     self.agents[index] = updated_agent;
+
+                    // Update grid with new positions
+                    if let Some(tile) = grid.get_mut(&cur_loc) {
+                        if tile.tile_type != TileType::Enemy {
+                            tile.change_tile_type(TileType::Floor);
+                        }
+                    }
+                    if let Some(new_tile) = grid.get_mut(&new_loc) {
+                        if new_tile.tile_type != TileType::Enemy {
+                            new_tile.change_tile_type(TileType::Player);
+                        }
+                    }
                 }
             }
         }
+
+        // Remove completed agents
         indices_to_remove.sort_by(|a, b| b.cmp(a));
         for index in indices_to_remove {
             self.agents.remove(index);
         }
 
-        // Get updated grid from Arc
-        let final_grid = Arc::try_unwrap(grid_arc)
-            .unwrap_or_else(|_| panic!("Failed to get unique access to grid"))
-            .into_inner()
-            .unwrap();
-
-        self.cached_grid.borrow_mut().replace(final_grid);
+        // Update the cached grid with all changes
+        self.cached_grid.replace(Some(grid));
     }
 
     fn get_rect(&self) -> Rect {

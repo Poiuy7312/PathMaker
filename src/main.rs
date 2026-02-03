@@ -19,6 +19,7 @@ use std::{env, thread};
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 // mod button;
+mod benchmarks;
 mod colors;
 
 mod components;
@@ -29,6 +30,7 @@ mod pathfinding;
 mod settings;
 mod util;
 
+use crate::benchmarks::sobel_method;
 use crate::colors::*;
 
 use crate::components::file_explorer::FileExplorer;
