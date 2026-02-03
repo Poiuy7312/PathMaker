@@ -1,3 +1,4 @@
+use crate::benchmarks::sobel_method;
 use crate::components::board::Tile;
 use crate::settings::GameSettings;
 use jemalloc_ctl::{epoch, stats, thread};
@@ -73,6 +74,7 @@ impl Agent {
             let after = allocated.read().unwrap().get();
             let time = now.elapsed();
 
+            println!("WCF {:.5?}", sobel_method(&map));
             println!("Memory used: {} (bytes)", after - before);
             println!("Elapsed: {:.2?}", time);
             println!("Steps: {}", steps);
@@ -85,8 +87,8 @@ impl Agent {
         }
         return (current_position, self.position);
     }
-    pub fn get_goal(&self) -> (i32, i32) {
-        return self.goal;
+    pub fn goal_reached(&self) -> bool {
+        return self.position == self.goal;
     }
     pub fn is_path_possible(
         &self,
