@@ -22,6 +22,9 @@ pub struct GameSettings {
     pub tiles_x: u32,
     pub tiles_y: u32,
     pub weight: u8,
+    pub gen_weight: u8,
+    pub gen_obstacles: u16,
+    pub iterations: u8,
 
     // File settings
     pub last_opened_file: Option<String>,
@@ -48,6 +51,9 @@ impl Default for GameSettings {
             last_save_directory: String::from("/home"),
             auto_save_enabled: false,
             weight: 1,
+            gen_weight: 1,
+            gen_obstacles: 2,
+            iterations: 1,
         }
     }
 }
