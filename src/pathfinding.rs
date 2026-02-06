@@ -10,6 +10,7 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::time::Duration;
 use std::time::Instant;
 
 /// Trait for custom pathfinding algorithms
@@ -49,43 +50,39 @@ fn get_overall_path_weight(path: &Vec<(i32, i32)>, map: &HashMap<(i32, i32), Til
 }
 
 impl Agent {
-    pub fn get_next_move(
+    pub fn get_path(
         &mut self,
         algorithm: &str,
         map: &HashMap<(i32, i32), Tile>,
-    ) -> ((i32, i32), (i32, i32)) {
-        if self.path.len() == 0 {
-            let allocated = thread::allocatedp::mib().unwrap();
-            let mut all_possible_move: Vec<&(i32, i32)> = vec![];
-            for (loc, tile) in map {
-                if tile.is_traversable() {
-                    all_possible_move.push(loc);
-                }
+    ) -> (bool, Vec<(i32, i32)>, f64, u64, Duration, u128, u128) {
+        let allocated = thread::allocatedp::mib().unwrap();
+        let mut all_possible_move: Vec<&(i32, i32)> = vec![];
+        for (loc, tile) in map {
+            if tile.is_traversable() {
+                all_possible_move.push(loc);
             }
-
-            let now = Instant::now();
-            epoch::advance().unwrap();
-            let before = allocated.read().unwrap().get();
-            // Call your function here
-
-            // Capture final stats
-            let (path, steps) = get_algorithm(algorithm).find_path(self.start, self.goal, &map);
-            epoch::advance().unwrap();
-            let after = allocated.read().unwrap().get();
-            let time = now.elapsed();
-
-            println!("WCF {:.5?}", sobel_method(&map));
-            println!("Memory used: {} (bytes)", after - before);
-            println!("Elapsed: {:.2?}", time);
-            println!("Steps: {}", steps);
-            println!("Path Value: {}", get_overall_path_weight(&path, map));
-            self.path = path;
         }
-        let current_position = self.position;
-        if self.path.len() > 0 {
-            self.position = self.path.pop().expect("No move given")
-        }
-        return (current_position, self.position);
+
+        let now = Instant::now();
+        epoch::advance().unwrap();
+        let before = allocated.read().unwrap().get();
+        // Call your function here
+
+        // Capture final stats
+        let (path, steps) = get_algorithm(algorithm).find_path(self.start, self.goal, &map);
+        epoch::advance().unwrap();
+        let after = allocated.read().unwrap().get();
+        let time = now.elapsed();
+
+        return (
+            true,
+            path,
+            sobel_method(&map),
+            after - before,
+            time,
+            steps,
+            get_overall_path_weight(&self.path, map),
+        );
     }
     pub fn goal_reached(&self) -> bool {
         return self.position == self.goal;
@@ -137,7 +134,6 @@ impl Agent {
                 }
             }
         }
-
         false // no path found
     }
 }
