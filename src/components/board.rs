@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::{fmt, fs, thread, u8};
 
 extern crate sdl2;
@@ -140,8 +141,8 @@ impl Tile {
     fn change_tile_type(&mut self, new_type: TileType) {
         if self.tile_type != new_type {
             self.tile_type = new_type;
+            self.dirty = true;
         }
-        self.dirty = true;
     }
 }
 
@@ -193,7 +194,6 @@ impl<'de> Deserialize<'de> for Board {
             let pos_str = &tile_data[0];
             let type_str = &tile_data[1];
             let weight_str = &tile_data[2];
-
             let parts: Vec<&str> = pos_str.split(',').collect();
             if parts.len() == 2 {
                 if let (Ok(x), Ok(y)) = (parts[0].parse::<i32>(), parts[1].parse::<i32>()) {
@@ -447,7 +447,7 @@ impl Board {
         for i in 0..self.tile_amount_x {
             for j in 0..self.tile_amount_y {
                 let position: (i32, i32) = (i as i32, j as i32);
-                let num: u8 = rng.random_range(0..=weight_range);
+                let num: u8 = rng.random_range(0..=weight_range).max(1);
                 if self.starts.contains(&position) {
                     grid.insert(
                         position,
@@ -525,65 +525,147 @@ impl Board {
         }
     }
 
-    pub fn update_board(&mut self, algorithm: &str) {
-        if self.agents.is_empty() {
-            self.create_agents();
-            self.generate_random_grid(100, 400);
-        }
-        let mut grid: HashMap<(i32, i32), Tile> = self.grid();
-        let mut handles = vec![];
-
-        // Spawn threads - each gets its own grid copy
-        for i in 0..self.agents.len() {
-            let grid_clone = grid.clone(); // No Arc<Mutex>, just clone
-            let algorithm_str = algorithm.to_string();
-            let mut agent_clone = self.agents[i].clone();
-
-            let handle = thread::spawn(move || {
-                if agent_clone.is_path_possible(&grid_clone) && !agent_clone.goal_reached() {
-                    let (cur_loc, new_loc) = agent_clone.get_next_move(&algorithm_str, &grid_clone);
-                    (i, agent_clone, new_loc, cur_loc, true)
-                } else {
-                    (i, agent_clone, (0, 0), (0, 0), false)
+    pub fn update_board(
+        &mut self,
+        canvas: &mut Canvas<Window>,
+        algorithm: &str,
+        doubling: bool,
+        obstacles: u16,
+        iterations: u8,
+        weight_range: u8,
+    ) {
+        let mut obstacles = obstacles as usize;
+        for i in 0..iterations {
+            let mut valid_iteration = false;
+            while !valid_iteration {
+                if doubling {
+                    self.generate_random_grid(
+                        weight_range.min(255),
+                        obstacles.min((self.tile_amount_x * self.tile_amount_y / 2) as usize),
+                    );
                 }
-            });
-            handles.push(handle);
-        }
+                if self.agents.is_empty() {
+                    self.create_agents();
+                }
+                let grid: HashMap<(i32, i32), Tile> = self.grid();
+                valid_iteration = true;
+                let mut agents_completed_count = 0;
+                while agents_completed_count != self.starts.len() {
+                    let mut handles = vec![];
+                    // Spawn threads - each gets its own grid copy
+                    for i in 0..self.agents.len() {
+                        let grid_clone = grid.clone(); // No Arc<Mutex>, just clone
+                        let algorithm_str = algorithm.to_string();
 
-        // Collect results and update board on main thread
-        let mut indices_to_remove: Vec<usize> = vec![];
+                        let mut agent_clone = self.agents[i].clone();
 
-        for handle in handles {
-            if let Ok((index, updated_agent, new_loc, cur_loc, path_found)) = handle.join() {
-                if !path_found {
-                    indices_to_remove.push(index);
-                } else {
-                    // Update agent
-                    self.agents[index] = updated_agent;
+                        let handle = thread::spawn(move || {
+                            if agent_clone.is_path_possible(&grid_clone) {
+                                let (_, path, wcf, memory, time, steps, path_cost) =
+                                    agent_clone.get_path(&algorithm_str, &grid_clone);
+                                (
+                                    i,
+                                    Some(path),
+                                    Some(wcf),
+                                    Some(memory),
+                                    Some(time),
+                                    Some(steps),
+                                    Some(path_cost),
+                                )
+                            } else {
+                                println!("NOPE");
+                                (i, None, None, None, None, None, None)
+                            }
+                        });
+                        handles.push(handle);
+                    }
 
-                    // Update grid with new positions
-                    if let Some(tile) = grid.get_mut(&cur_loc) {
+                    // Collect results and update board on main thread
+                    for handle in handles {
+                        if let Ok((index, path, wcf, memory, time, steps, path_cost)) =
+                            handle.join()
+                        {
+                            if path.is_none() {
+                                // If any path is not possible, regenerate
+                                valid_iteration = false;
+                                break;
+                            } else {
+                                // Update agent
+                                self.agents[index].path = path.unwrap();
+                                agents_completed_count += 1;
+                            }
+                        }
+                    }
+
+                    if !valid_iteration {
+                        self.agents.clear();
+                        break;
+                    }
+
+                    // Update the cached grid with all changes
+                    self.cached_grid.replace(Some(grid.clone()));
+                    self.draw(canvas);
+                }
+            }
+            if i == iterations - 1 {
+                // Mark all tiles as dirty so they redraw on last iteration
+                let mut display_shown = false;
+                while !display_shown {
+                    let mut grid = self.grid();
+                    // Mark all tiles as dirty so they redraw every frame
+                    display_shown = true;
+                    self.agents.iter_mut().for_each(|agent| {
+                        let current = agent.position;
+                        if !agent.goal_reached() {
+                            display_shown = false;
+                        }
+                        if agent.path.len() > 0 {
+                            let next = agent.path.pop().unwrap();
+                            if let Some(tile) = grid.get_mut(&current) {
+                                if tile.tile_type != TileType::Enemy {
+                                    tile.change_tile_type(TileType::Floor);
+                                }
+                            }
+                            if let Some(new_tile) = grid.get_mut(&next) {
+                                if new_tile.tile_type != TileType::Enemy {
+                                    new_tile.change_tile_type(TileType::Player);
+                                }
+                            }
+                            agent.position = next;
+                        }
+                    });
+                    self.cached_grid.replace(Some(grid));
+                    self.draw(canvas);
+                    canvas.present();
+                    thread::sleep(Duration::from_millis(16));
+                }
+
+                let mut grid = self.grid();
+                self.agents.iter_mut().for_each(|agent| {
+                    let current = agent.position;
+                    let start = agent.start;
+                    if let Some(tile) = grid.get_mut(&current) {
                         if tile.tile_type != TileType::Enemy {
                             tile.change_tile_type(TileType::Floor);
                         }
                     }
-                    if let Some(new_tile) = grid.get_mut(&new_loc) {
+                    if let Some(new_tile) = grid.get_mut(&start) {
                         if new_tile.tile_type != TileType::Enemy {
                             new_tile.change_tile_type(TileType::Player);
                         }
                     }
-                }
+                });
+                self.cached_grid.replace(Some(grid));
+                self.draw(canvas);
+                canvas.present();
             }
+            if doubling {
+                obstacles *= 2;
+            }
+            self.draw(canvas);
+            self.agents.clear();
+            println!("{}", i);
         }
-
-        // Remove completed agents
-        indices_to_remove.sort_by(|a, b| b.cmp(a));
-        for index in indices_to_remove {
-            self.agents.remove(index);
-        }
-
-        // Update the cached grid with all changes
-        self.cached_grid.replace(Some(grid));
     }
 
     fn get_rect(&self) -> Rect {
