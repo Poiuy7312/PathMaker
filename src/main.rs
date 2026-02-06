@@ -397,7 +397,7 @@ pub fn main() {
         text: "Number of Obstacles".to_string(),
         id: "Number of Obstacles".to_string(),
         active: false,
-        range: 255,
+        range: 400,
         slider_horizontal_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
@@ -644,12 +644,24 @@ pub fn main() {
                 window_width as i32 - board_control_widget.get_width() as i32,
                 board_control_widget.get_location().y(),
             ));
+            board_control_widget.change_height(window_height);
             board_control_widget.change_drawn(false);
             file_select_widget.change_location(Point::new(
                 window_width as i32 / 2 - file_select_widget.get_width() as i32 / 2,
                 file_select_widget.get_location().y(),
             ));
             file_select_widget.change_drawn(false);
+            save_widget.change_location(Point::new(
+                window_width as i32 / 2 - save_widget.get_width() as i32 / 2,
+                save_widget.get_location().y(),
+            ));
+            save_widget.change_drawn(false);
+            gen_control_widget.change_location(Point::new(
+                window_width as i32 / 2 - gen_control_widget.get_width() as i32 / 2,
+                gen_control_widget.get_location().y(),
+            ));
+            gen_control_widget.change_drawn(false);
+            board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
         }
 
         if run_game_board {
