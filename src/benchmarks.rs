@@ -30,6 +30,11 @@ pub fn sobel_method(grid: &HashMap<(i32, i32), Tile>) -> f64 {
             (0, 1),
             (1, 1),
         ];
+        if let Some(tile) = grid.get(&(c, r)) {
+            if !tile.is_floor() {
+                continue;
+            }
+        }
 
         for (idx, &(dc, dr)) in deltas.iter().enumerate() {
             let neighbor_pos = (c + dc, r + dr);
