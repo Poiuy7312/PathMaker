@@ -34,8 +34,9 @@ pub trait Interface: Component {
     fn get_rect(&self, point: Point) -> Rect;
     fn is_static(&self) -> bool;
     fn has_indent(&self) -> bool;
-    fn draw_priority(&self) -> bool;
+    fn draw_priority(&self) -> u8;
     fn dirty_parent(&self) -> bool;
+    fn deactivate_parent(&self) -> bool;
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
@@ -140,10 +141,14 @@ impl Interface for StandardButton {
         false
     }
 
-    fn draw_priority(&self) -> bool {
-        true
+    fn draw_priority(&self) -> u8 {
+        1
     }
     fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn deactivate_parent(&self) -> bool {
         false
     }
 
@@ -406,11 +411,15 @@ impl Interface for Dropdown {
         false
     }
 
-    fn draw_priority(&self) -> bool {
-        false
+    fn draw_priority(&self) -> u8 {
+        2
     }
 
     fn dirty_parent(&self) -> bool {
+        true
+    }
+
+    fn deactivate_parent(&self) -> bool {
         true
     }
 
@@ -727,10 +736,15 @@ impl Interface for OptionButton {
         false
     }
 
-    fn draw_priority(&self) -> bool {
-        true
+    fn draw_priority(&self) -> u8 {
+        1
     }
+
     fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn deactivate_parent(&self) -> bool {
         false
     }
 
@@ -899,10 +913,14 @@ impl Interface for CheckBox {
         Rect::new(point.x(), point.y(), self.width, self.height)
     }
 
-    fn draw_priority(&self) -> bool {
-        true
+    fn draw_priority(&self) -> u8 {
+        1
     }
     fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn deactivate_parent(&self) -> bool {
         false
     }
 
@@ -1026,9 +1044,11 @@ pub struct Slider {
     pub active: bool,
     pub range: u32,
     pub value: u32,
-    pub slider_horizontal_axis: i32,
+    pub slider_offset_axis: i32,
     pub drawn: RefCell<bool>,
     pub cached_texture: Option<Texture<'static>>,
+    pub is_vertical: bool,
+    pub minimal: bool,
 }
 
 impl Component for Slider {
@@ -1050,14 +1070,26 @@ impl Component for Slider {
 
     fn change_location(&mut self, new_location: Point) {
         if new_location != self.location {
-            let slider_dif = (self.location.x() - self.slider_horizontal_axis).abs();
-            let new_x = new_location.x();
-            self.location = new_location;
-            let mut slider_width = 10;
-            if self.width / self.range > 10 {
-                slider_width = self.width / self.range;
+            if self.is_vertical {
+                let slider_dif = (self.location.y() - self.slider_offset_axis).abs();
+                let new_y = new_location.y();
+                self.location = new_location;
+                let mut slider_height = 10;
+                if self.height / self.range > 10 {
+                    slider_height = self.height / self.range;
+                }
+                self.slider_offset_axis =
+                    (new_y + slider_height as i32 / 2).max(new_y + slider_dif);
+            } else {
+                let slider_dif = (self.location.x() - self.slider_offset_axis).abs();
+                let new_x = new_location.x();
+                self.location = new_location;
+                let mut slider_width = 10;
+                if self.width / self.range > 10 {
+                    slider_width = self.width / self.range;
+                }
+                self.slider_offset_axis = (new_x + slider_width as i32 / 2).max(new_x + slider_dif);
             }
-            self.slider_horizontal_axis = (new_x + slider_width as i32 / 2).max(new_x + slider_dif);
         }
     }
 
@@ -1104,11 +1136,15 @@ impl Interface for Slider {
         false
     }
 
-    fn draw_priority(&self) -> bool {
-        true
+    fn draw_priority(&self) -> u8 {
+        1
     }
 
     fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn deactivate_parent(&self) -> bool {
         false
     }
 
@@ -1119,6 +1155,22 @@ impl Interface for Slider {
         mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
+        if self.minimal {
+            canvas.set_draw_color(SECONDARY_COLOR);
+            canvas.fill_rect(self.get_rect(self.location)).unwrap();
+            // Draw only the slider thumb
+            let slider = if self.is_vertical {
+                self.calc_slider_vertical()
+            } else {
+                self.calc_slider_horizontal()
+            };
+
+            canvas.set_draw_color(PRIMARY_COLOR);
+            canvas.fill_rect(slider).unwrap();
+            return;
+        }
+
+        // Original full slider rendering (horizontal only)
         let button_background: Rect = self.get_rect(self.location);
         let available_width = (self.width as i32 - 10) as u32;
         let text_len = self.text.chars().count() as u32;
@@ -1139,7 +1191,7 @@ impl Interface for Slider {
         );
         let slider_text = format!("{}: {}", self.text, self.value);
         let font_surface: Surface<'_>;
-        let slider = self.calc_slider(slider_background);
+        let slider = self.calc_slider_horizontal();
         if text_map.width() >= button_background.width() {
             text_map.set_width(button_background.width());
         }
@@ -1187,34 +1239,79 @@ impl Interface for Slider {
 }
 
 impl Slider {
-    fn calc_slider(&self, background: Rect) -> Rect {
+    fn calc_slider_horizontal(&self) -> Rect {
         let slider_width = self.get_slider_width();
+        let slider_background = Rect::new(
+            self.location.x(),
+            self.location.y() + self.height as i32 / 2,
+            self.width,
+            self.height / 2,
+        );
+        let slider_location =
+            Point::from((self.slider_offset_axis, slider_background.center().y()));
+        Rect::from_center(slider_location, slider_width, slider_background.height())
+    }
 
-        let slider_location = Point::from((self.slider_horizontal_axis, background.center().y()));
-        Rect::from_center(slider_location, slider_width, background.height())
+    fn calc_slider_vertical(&self) -> Rect {
+        let slider_height = self.get_slider_width();
+        let slider_location = Point::from((
+            self.location.x() + self.width as i32 / 2,
+            self.slider_offset_axis,
+        ));
+        Rect::from_center(slider_location, self.width, slider_height)
     }
 
     fn get_slider_width(&self) -> u32 {
-        if self.width / self.range > 10 {
-            return self.width / self.range;
+        let dimension = if self.is_vertical {
+            self.height
+        } else {
+            self.width
+        };
+        if dimension / self.range > 10 {
+            return dimension / self.range;
         }
         10
     }
 
-    fn change_slider_value(&mut self, mouse_position: Point) {
+    pub fn change_slider_value(&mut self, mouse_position: Point) {
+        if self.is_vertical {
+            self.change_slider_value_vertical(mouse_position);
+        } else {
+            self.change_slider_value_horizontal(mouse_position);
+        }
+    }
+
+    fn change_slider_value_horizontal(&mut self, mouse_position: Point) {
         let new_value = mouse_position.x();
         let slider_width = self.get_slider_width() as i32;
-        if new_value != self.slider_horizontal_axis {
-            self.slider_horizontal_axis = new_value
+        if new_value != self.slider_offset_axis {
+            self.slider_offset_axis = new_value
                 .max(self.location.x() + slider_width / 2)
                 .min(self.location.x() + self.width as i32 - slider_width / 2);
         }
-        let relative_location = self.slider_horizontal_axis - self.location.x() - slider_width / 2;
+        let relative_location = self.slider_offset_axis - self.location.x() - slider_width / 2;
         let mut ratio = 1.0;
         if self.range != self.width && self.width > 0 {
             ratio = self.range as f32 / (self.width - slider_width as u32) as f32;
         }
-        // Makes sure value stays in-between possible range
+        self.value = ((relative_location as f32 * ratio) as u32)
+            .max(0)
+            .min(self.range);
+    }
+
+    fn change_slider_value_vertical(&mut self, mouse_position: Point) {
+        let new_value = mouse_position.y();
+        let slider_height = self.get_slider_width() as i32;
+        if new_value != self.slider_offset_axis {
+            self.slider_offset_axis = new_value
+                .max(self.location.y() + slider_height / 2)
+                .min(self.location.y() + self.height as i32 - slider_height / 2);
+        }
+        let relative_location = self.slider_offset_axis - self.location.y() - slider_height / 2;
+        let mut ratio = 1.0;
+        if self.range != self.height && self.height > 0 {
+            ratio = self.range as f32 / (self.height - slider_height as u32) as f32;
+        }
         self.value = ((relative_location as f32 * ratio) as u32)
             .max(0)
             .min(self.range);

@@ -71,7 +71,11 @@ impl Widget {
             if let Some(button_id) = cached_map.get(&pos) {
                 if let Some(button) = self.buttons.get_mut(button_id) {
                     if button.dirty_parent() {
+                        if button.deactivate_parent() {
+                            self.important_component_clicked = !self.important_component_clicked;
+                        }
                         dirty = true;
+                        println!("Yes");
                     }
                     println!("S: {:#?}", button_id);
                     result = (Some(button_id.to_string()), button.on_click(mouse_state));
@@ -83,7 +87,11 @@ impl Widget {
                     let button_id = button.get_id();
                     println!("C: {}", button_id);
                     if button.dirty_parent() {
+                        if button.deactivate_parent() {
+                            self.important_component_clicked = !self.important_component_clicked;
+                        }
                         dirty = true;
+                        println!("Yes");
                     } else if button.is_drawn() {
                         button.change_drawn(false);
                     }
@@ -93,10 +101,10 @@ impl Widget {
             }
         }
         if dirty {
-            self.important_component_clicked = !self.important_component_clicked;
             println!("No");
             self.change_drawn(false);
         }
+        println!("Result: {:#?}", result);
         return result;
     }
 
@@ -279,11 +287,7 @@ impl Widget {
             }
         } else {
             let mut button_ids: Vec<&str> = self.buttons.keys().copied().collect();
-            button_ids.sort_by_key(|id| {
-                // high priority = false (drawn last), low priority = true (drawn first)
-                // so reverse: !draw_priority() sorts to the end
-                !self.buttons[id].draw_priority()
-            });
+            button_ids.sort_by_key(|id| self.buttons[id].draw_priority());
             for id in &button_ids {
                 if let Some(a) = self.buttons.get_mut(id) {
                     if self.important_component_clicked {

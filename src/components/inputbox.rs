@@ -89,11 +89,15 @@ impl Interface for InputBox {
         false
     }
 
-    fn draw_priority(&self) -> bool {
-        true
+    fn draw_priority(&self) -> u8 {
+        1
     }
 
     fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn deactivate_parent(&self) -> bool {
         false
     }
 

@@ -29,6 +29,7 @@ pub struct FileExplorer {
     pub filter: Option<String>,
     pub active: bool,
     pub drawn: RefCell<bool>,
+    pub scroll_slider: RefCell<Slider>,
 }
 impl Interface for FileExplorer {
     fn get_rect(&self, point: Point) -> Rect {
@@ -42,11 +43,15 @@ impl Interface for FileExplorer {
         false
     }
 
-    fn draw_priority(&self) -> bool {
-        true
+    fn draw_priority(&self) -> u8 {
+        0
     }
 
     fn dirty_parent(&self) -> bool {
+        true
+    }
+
+    fn deactivate_parent(&self) -> bool {
         false
     }
 
@@ -105,7 +110,6 @@ impl Interface for FileExplorer {
                     display = self.current_display.to_string();
                 }
             }
-            println!("{}", display);
 
             if let Some(buttons) = self.directories.borrow().get(&display) {
                 for id in &buttons.1 {
@@ -117,20 +121,57 @@ impl Interface for FileExplorer {
                 }
             }
 
+            // Update slider range based on number of items
+            let max_visible_items = (self.height / 25) as u32;
+            let total_items = button_list.len() as u32;
+
+            if total_items > max_visible_items {
+                self.scroll_slider.borrow_mut().range = total_items - max_visible_items;
+                self.scroll_slider.borrow_mut().active = true;
+            } else {
+                self.scroll_slider.borrow_mut().active = false;
+            }
+
+            // Calculate scroll offset based on slider value
+            let slider_value = self.scroll_slider.borrow().value;
+            let scroll_offset = slider_value as i32;
+
             let mut offset: u32 = 0;
-            button_list
-                .iter()
-                .filter(|&a| self.directories.borrow().get(a).is_some())
-                .for_each(|a| {
+            let display_range = self.get_rect(self.location);
+            let height = (self.height / 10) as i32;
+
+            for button in button_list {
+                if self.directories.borrow().get(&button).is_some() {
+                    let col = self.location.y + offset as i32 * height;
+                    let loc = Point::new(self.location.x, (col - (scroll_offset * height)).max(0));
                     let mut binding = self.directories.borrow_mut();
-                    let a = binding.get_mut(a).unwrap();
-                    let col = self.location.y + (offset as i32 * 25 as i32);
-                    let loc = Point::new(self.location.x, col);
-                    let used = a.0.layout(loc, self.width, 25);
+                    let a = binding.get_mut(&button).unwrap();
+                    a.0.change_drawn(false);
+                    let button_range = a.0.get_rect(loc);
+                    let used = a.0.layout(loc, self.width - 20, height as u32);
                     offset += used;
-                    a.0.change_active(true);
-                    a.0.draw(canvas, &texture_creator, mouse_state, font);
-                });
+                    if button_range.top() >= display_range.top()
+                        && button_range.bottom() <= display_range.bottom()
+                    {
+                        a.0.draw(canvas, &texture_creator, mouse_state, font);
+                        a.0.change_active(true);
+                    }
+                }
+            }
+
+            // Draw the slider
+            if self.scroll_slider.borrow().active {
+                let slider_location =
+                    Point::new(self.location.x + self.width as i32 - 20, self.location.y);
+                self.scroll_slider
+                    .borrow_mut()
+                    .change_location(slider_location);
+                self.scroll_slider.borrow_mut().height = self.height;
+                self.scroll_slider.borrow_mut().width = 20;
+                self.scroll_slider
+                    .borrow()
+                    .draw(canvas, &texture_creator, mouse_state, font);
+            }
         } else {
             self.directories
                 .borrow_mut()
@@ -142,6 +183,22 @@ impl Interface for FileExplorer {
 impl Component for FileExplorer {
     fn on_click(&mut self, mouse_state: Point) -> (bool, Option<String>) {
         self.change_drawn(false);
+
+        // Check if slider is active and if click is on the slider
+        if self.scroll_slider.borrow().active {
+            let slider_rect = self
+                .scroll_slider
+                .borrow()
+                .get_rect(self.scroll_slider.borrow().location);
+            if slider_rect.contains_point(mouse_state) {
+                self.scroll_slider
+                    .borrow_mut()
+                    .change_slider_value(mouse_state);
+                return (true, None);
+            }
+        }
+
+        // Otherwise check directory buttons
         match self.directories.borrow().get(&self.current_display) {
             Some(value) => {
                 for button in &value.1 {

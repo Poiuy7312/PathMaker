@@ -149,10 +149,12 @@ pub fn main() {
         id: "Weight_Draw".to_string(),
         active: false,
         range: 255,
-        slider_horizontal_axis: 0,
+        slider_offset_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
         value: 0,
+        is_vertical: false,
+        minimal: false,
     });
 
     let DG_Check: Box<dyn Interface> = Box::new(CheckBox {
@@ -238,6 +240,23 @@ pub fn main() {
         filter: None,
         active: false,
         drawn: RefCell::new(false),
+        scroll_slider: RefCell::new(Slider {
+            height: 0,
+            width: 20,
+            location: Point::new(0, 0),
+            text_color: BLACK,
+            background_color: SECONDARY_COLOR,
+            text: String::new(),
+            id: "Save_File_Slider".to_string(),
+            active: false,
+            range: 0,
+            value: 0,
+            slider_offset_axis: 0,
+            drawn: RefCell::new(false),
+            cached_texture: None,
+            is_vertical: true,
+            minimal: true,
+        }),
     });
 
     let save_widget_accept: Box<dyn Interface> = Box::new(StandardButton {
@@ -382,10 +401,12 @@ pub fn main() {
         id: "Weight_Range".to_string(),
         active: false,
         range: 255,
-        slider_horizontal_axis: 0,
+        slider_offset_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
         value: 0,
+        is_vertical: false,
+        minimal: false,
     });
 
     let obstacle_gen_value: Box<dyn Interface> = Box::new(Slider {
@@ -398,10 +419,12 @@ pub fn main() {
         id: "Number of Obstacles".to_string(),
         active: false,
         range: 400,
-        slider_horizontal_axis: 0,
+        slider_offset_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
         value: 0,
+        is_vertical: false,
+        minimal: false,
     });
 
     let iteration_gen_value: Box<dyn Interface> = Box::new(Slider {
@@ -414,10 +437,12 @@ pub fn main() {
         id: "Iterations".to_string(),
         active: false,
         range: 100,
-        slider_horizontal_axis: 0,
+        slider_offset_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
         value: 0,
+        is_vertical: false,
+        minimal: false,
     });
 
     let Gen_Ok: Box<dyn Interface> = Box::new(StandardButton {
@@ -552,6 +577,23 @@ pub fn main() {
         filter: None,
         active: false,
         drawn: RefCell::new(false),
+        scroll_slider: RefCell::new(Slider {
+            height: 0,
+            width: 20,
+            location: Point::new(0, 0),
+            text_color: BLACK,
+            background_color: SECONDARY_COLOR,
+            text: String::new(),
+            id: "Select_File_Slider".to_string(),
+            active: false,
+            range: 0,
+            value: 0,
+            slider_offset_axis: 0,
+            drawn: RefCell::new(false),
+            cached_texture: None,
+            is_vertical: true,
+            minimal: true,
+        }),
     });
 
     let go_back_button: Box<dyn Interface> = Box::new(StandardButton {
