@@ -2,10 +2,9 @@ use std::{
     collections::HashSet,
     env,
     ffi::{OsStr, OsString},
-    fs,
+    fs::{read_dir, read_to_string, write, DirEntry},
     path::{Path, PathBuf},
 };
-use walkdir::{DirEntry, WalkDir};
 
 use serde_json::{self, Value};
 use std::collections::HashMap;
@@ -40,19 +39,21 @@ fn build_tree(path: &Path) -> DirectoryNode {
     };
 
     if node.is_dir {
-        if let Ok(entries) = fs::read_dir(path) {
+        if let Ok(entries) = read_dir(path) {
             for entry in entries.filter_map(|e| e.ok()) {
-                let p = entry.path();
-                if p.is_dir() {
-                    node.children.push(build_tree(&p));
-                } else {
-                    match p.extension() {
-                        Some(ext) => {
-                            if ext == allowed_extension {
-                                node.children.push(build_tree(&p));
+                if is_not_hidden(&entry) {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        node.children.push(build_tree(&p));
+                    } else {
+                        match p.extension() {
+                            Some(ext) => {
+                                if ext == allowed_extension {
+                                    node.children.push(build_tree(&p));
+                                }
                             }
+                            None => {}
                         }
-                        None => {}
                     }
                 }
                 // Skip hidden entries if desired, or add filtering here.
@@ -63,8 +64,16 @@ fn build_tree(path: &Path) -> DirectoryNode {
     node
 }
 
+fn is_not_hidden(entry: &DirEntry) -> bool {
+    entry
+        .file_name()
+        .to_str()
+        .map(|s| !s.starts_with('.'))
+        .unwrap_or(false)
+}
+
 pub fn get_current_directory() -> PathBuf {
-    return env::current_dir().expect("Failed to get current dir");
+    return env::home_dir().expect("No home directory");
 }
 
 /// Returns a tree rooted at the current working directory.
@@ -161,7 +170,7 @@ pub fn parse_map_file(
 pub fn read_file(path: &str) -> String {
     let path = Path::new(&path);
     println!("Reading File: {:#?}", path);
-    match fs::read_to_string(path) {
+    match read_to_string(path) {
         Ok(value) => {
             return value;
         }
@@ -172,5 +181,5 @@ pub fn read_file(path: &str) -> String {
 pub fn save_file(path: String, file_content: String) {
     let path = path + "/test.json";
     println!("{}", path);
-    fs::write(path, file_content).expect("bad");
+    write(path, file_content).expect("bad");
 }
