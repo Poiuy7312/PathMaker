@@ -12,11 +12,12 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 
-use crate::colors::*;
 use crate::components::{board::*, button::*, inputbox::*, Component};
 use crate::fileDialog::DirectoryNode;
+use crate::{colors::*, fileDialog};
 
 pub struct FileExplorer {
     pub location: Point,
@@ -24,9 +25,10 @@ pub struct FileExplorer {
     pub height: u32,
     pub width: u32,
     pub default_dir: String,
-    pub directories: RefCell<HashMap<String, (StandardButton, Vec<String>)>>,
+    pub directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>>,
     pub current_display: String,
     pub filter: Option<String>,
+    pub filter_dir: bool,
     pub active: bool,
     pub drawn: RefCell<bool>,
     pub scroll_slider: RefCell<Slider>,
@@ -113,11 +115,29 @@ impl Interface for FileExplorer {
 
             if let Some(buttons) = self.directories.borrow().get(&display) {
                 for id in &buttons.1 {
-                    button_list.push(id.to_string());
+                    match self.filter_dir {
+                        true => {
+                            if fileDialog::is_directory(id) {
+                                button_list.push(id.to_string());
+                            }
+                        }
+                        false => {
+                            button_list.push(id.to_string());
+                        }
+                    }
                 }
             } else if let Some(buttons) = self.directories.borrow().get(&self.current_display) {
                 for id in &buttons.1 {
-                    button_list.push(id.to_string());
+                    match self.filter_dir {
+                        true => {
+                            if fileDialog::is_directory(id) {
+                                button_list.push(id.to_string());
+                            }
+                        }
+                        false => {
+                            button_list.push(id.to_string());
+                        }
+                    }
                 }
             }
 
@@ -236,6 +256,9 @@ impl Component for FileExplorer {
         self.active = new_value;
         if !new_value {
             self.current_display = self.default_dir.clone();
+            self.scroll_slider
+                .borrow_mut()
+                .change_slider_value(Point::new(0, 0));
         }
     }
 
@@ -266,7 +289,10 @@ impl Component for FileExplorer {
 
 impl FileExplorer {
     pub fn change_display(&mut self, new_display: String) {
-        self.current_display = new_display
+        self.current_display = new_display;
+        self.scroll_slider
+            .borrow_mut()
+            .change_slider_value(Point::new(0, 0));
     }
 
     pub fn change_filter(&mut self, new_filter: Option<String>) -> bool {

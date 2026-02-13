@@ -11,6 +11,7 @@ use sdl2::ttf;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, thread};
@@ -84,13 +85,9 @@ pub fn main() {
     let mut run_game_board = false;
     //= Rect::new(998, 0, 1000, 1000);
 
-    let directories: HashMap<String, (StandardButton, Vec<String>)> =
-        util::get_dir_map(&directory_tree, window_width);
-
-    let filtered_directories: HashMap<String, (StandardButton, Vec<String>)> =
-        util::get_dir_map(&directory_tree, window_width)
-            .extract_if(|k, _| fileDialog::is_directory(k))
-            .collect();
+    let directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>> = Rc::new(
+        RefCell::new(util::get_dir_map(&directory_tree, window_width)),
+    );
 
     let path_selector: Box<dyn Interface> = {
         Box::new(Dropdown {
@@ -212,11 +209,12 @@ pub fn main() {
         id: String::from("Display"),
         location: Point::new(0, 0),
         drawn: RefCell::new(false),
+        clicked_on: false,
     });
 
     let save_widget_name: Box<dyn Interface> = Box::new(InputBox {
         default_text: "File Name".to_string(),
-        text: "test.json".to_string(),
+        text: "".to_string(),
         active: false,
         text_color: WHITE,
         background_color: PRIMARY_COLOR,
@@ -225,6 +223,7 @@ pub fn main() {
         id: String::from("File_Name"),
         location: Point::new(0, 0),
         drawn: RefCell::new(false),
+        clicked_on: false,
     });
 
     let home_dir = directory_tree.path.to_string_lossy().to_string();
@@ -234,9 +233,9 @@ pub fn main() {
         id: String::from("Save_File_Exp"),
         height: 0,
         width: 0,
-        directories: RefCell::new(filtered_directories),
-        default_dir: home_dir.clone(),
-        current_display: home_dir.clone(),
+        directories: Rc::clone(&directories),
+        default_dir: home_dir.to_string(),
+        current_display: home_dir.to_string(),
         filter: None,
         active: false,
         drawn: RefCell::new(false),
@@ -257,6 +256,7 @@ pub fn main() {
             is_vertical: true,
             minimal: true,
         }),
+        filter_dir: true,
     });
 
     let save_widget_accept: Box<dyn Interface> = Box::new(StandardButton {
@@ -268,6 +268,21 @@ pub fn main() {
         hover: RefCell::new(false),
         text: String::from("Save"),
         id: String::from("Save_Wid_Save"),
+        filter: None,
+        active: false,
+        drawn: RefCell::new(false),
+        cached_texture: None,
+    });
+
+    let generate_grid: Box<dyn Interface> = Box::new(StandardButton {
+        height: 0,
+        width: 0,
+        location: Point::new(0, 0),
+        text_color: WHITE,
+        background_color: PRIMARY_COLOR,
+        hover: RefCell::new(false),
+        text: String::from("Generate Grid"),
+        id: String::from("Gen_Grid"),
         filter: None,
         active: false,
         drawn: RefCell::new(false),
@@ -383,6 +398,7 @@ pub fn main() {
         vec!["Piece_Select"],
         vec!["Path_Selector"],
         vec!["Weight_Draw"],
+        vec!["Gen_Grid"],
         vec!["DG_Select"],
         vec!["DE_Select"],
         vec!["MA_Select"],
@@ -500,6 +516,7 @@ pub fn main() {
         ("Path_Selector", path_selector),
         ("Piece_Select", piece_select),
         ("Weight_Draw", weight_draw_value),
+        ("Gen_Grid", generate_grid),
     ]);
 
     let mut board_control_widget: Widget = Widget {
@@ -526,6 +543,7 @@ pub fn main() {
         vec!["Save_File_Exp", "Save_File_Exp"],
         vec!["Save_File_Exp", "Save_File_Exp"],
         vec!["Save_File_Exp", "Save_File_Exp"],
+        vec!["Save_File_Exp", "Save_File_Exp"],
         vec!["Save_Wid_Save", "Save_Wid_Exit"],
         vec!["Save_Wid_Save", "Save_Wid_Exit"],
     ];
@@ -541,7 +559,7 @@ pub fn main() {
     let mut save_widget = Widget {
         location: Point::new(window_width as i32 * 1 / 4, 0),
         id: String::from("SAVE_WIDGET"),
-        result: Some(home_dir.clone()),
+        result: Some(home_dir.to_string()),
         height: window_height / 2,
         width: window_width / 2,
         buttons: save_widget_buttons,
@@ -564,6 +582,7 @@ pub fn main() {
         id: String::from("Search_File"),
         location: Point::new(window_width as i32 - 200, 1),
         drawn: RefCell::new(false),
+        clicked_on: false,
     });
 
     let select_file_explorer: Box<dyn Interface> = Box::new(FileExplorer {
@@ -571,7 +590,7 @@ pub fn main() {
         id: String::from("Select_File_Exp"),
         height: 0,
         width: 0,
-        directories: RefCell::new(directories),
+        directories: Rc::clone(&directories),
         default_dir: home_dir.to_string(),
         current_display: home_dir.to_string(),
         filter: None,
@@ -594,6 +613,7 @@ pub fn main() {
             is_vertical: true,
             minimal: true,
         }),
+        filter_dir: false,
     });
 
     let go_back_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -860,6 +880,9 @@ pub fn main() {
                             "Display" => {
                                 video_subsystem.text_input().start();
                             }
+                            "File_Name" => {
+                                video_subsystem.text_input().start();
+                            }
                             "Save_Wid_Exit" => {
                                 save_file = false;
                                 save_widget.change_active(false);
@@ -869,7 +892,10 @@ pub fn main() {
                             }
                             "Save_Wid_Save" => {
                                 game_board
-                                    .save_to_file(&save_widget.get_result().expect("No path given"))
+                                    .save_to_file(
+                                        &save_widget.get_result().expect("No path given"),
+                                        &settings.save_file,
+                                    )
                                     .unwrap();
                                 save_file = false;
                                 save_widget.change_active(false);
@@ -950,8 +976,7 @@ pub fn main() {
                     None => {}
                 }
             } else if gen_menu {
-                let (clicked_button, (_, inner_button_clicked)) =
-                    gen_control_widget.on_click(mouse_position);
+                let (clicked_button, _) = gen_control_widget.on_click(mouse_position);
                 match clicked_button {
                     Some(name) => match name.as_str().trim() {
                         "Weight_Range" => {
@@ -1043,6 +1068,10 @@ pub fn main() {
                             },
                             None => {}
                         },
+                        "Gen_Grid" => {
+                            game_board.generate_random_grid(255, 300);
+                            game_board.draw(&mut canvas);
+                        }
                         "Weight_Draw" => {
                             if let Some(slider) =
                                 board_control_widget.buttons.get_mut("Weight_Draw")
@@ -1147,6 +1176,23 @@ pub fn main() {
                                     button.change_filter(save_widget.result.clone());
                                 }
                             }
+                            if let Some(save_display) = save_widget.buttons.get_mut("File_Name") {
+                                if let Some(display) =
+                                    save_display.as_any().downcast_mut::<InputBox>()
+                                {
+                                    if display.clicked_on() {
+                                        display.clicked_on = false;
+                                        settings.save_file = display.text.clone();
+                                    }
+                                }
+                            }
+                            if let Some(save_display) = save_widget.buttons.get_mut("Display") {
+                                if let Some(display) =
+                                    save_display.as_any().downcast_mut::<InputBox>()
+                                {
+                                    display.clicked_on = false;
+                                }
+                            }
                             save_widget.change_drawn(false);
                         }
 
@@ -1168,14 +1214,37 @@ pub fn main() {
                             };
                             file_select_widget.change_drawn(false);
                         } else if save_widget.is_active() {
-                            save_widget.result = match save_widget.result {
-                                Some(mut tex) => {
-                                    tex.pop();
-                                    Some(tex)
-                                }
-                                None => save_widget.result,
-                            };
                             save_widget.change_drawn(false);
+                            if let Some(save_display) = save_widget.buttons.get_mut("Display") {
+                                if let Some(display) =
+                                    save_display.as_any().downcast_mut::<InputBox>()
+                                {
+                                    if display.clicked_on() {
+                                        save_widget.result = match save_widget.result {
+                                            Some(mut tex) => {
+                                                tex.pop();
+                                                Some(tex)
+                                            }
+                                            None => save_widget.result,
+                                        };
+                                    }
+                                }
+                            }
+
+                            if let Some(save_display) = save_widget.buttons.get_mut("File_Name") {
+                                if let Some(display) =
+                                    save_display.as_any().downcast_mut::<InputBox>()
+                                {
+                                    if display.clicked_on() {
+                                        match display.text.trim().is_empty() {
+                                            true => {}
+                                            false => {
+                                                display.text.pop();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1189,10 +1258,35 @@ pub fn main() {
                             };
                             file_select_widget.change_drawn(false);
                         } else if save_widget.is_active() {
-                            save_widget.result = match save_widget.result {
-                                Some(tex) => Some(tex + &text),
-                                None => Some(text),
-                            };
+                            if let Some(save_display) = save_widget.buttons.get_mut("Display") {
+                                if let Some(display) =
+                                    save_display.as_any().downcast_mut::<InputBox>()
+                                {
+                                    if display.clicked_on() {
+                                        save_widget.result = match save_widget.result {
+                                            Some(tex) => Some(tex + &text),
+                                            None => Some(text.clone()),
+                                        };
+                                    }
+                                }
+                            }
+
+                            if let Some(save_display) = save_widget.buttons.get_mut("File_Name") {
+                                if let Some(display) =
+                                    save_display.as_any().downcast_mut::<InputBox>()
+                                {
+                                    if display.clicked_on() {
+                                        match display.text.trim().is_empty() {
+                                            true => {
+                                                display.text = text;
+                                            }
+                                            false => {
+                                                display.text += &text;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             save_widget.change_drawn(false);
                         }
                     }
