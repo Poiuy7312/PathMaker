@@ -1281,7 +1281,7 @@ impl Slider {
         }
     }
 
-    fn change_slider_value_horizontal(&mut self, mouse_position: Point) {
+    pub fn change_slider_value_horizontal(&mut self, mouse_position: Point) {
         let new_value = mouse_position.x();
         let slider_width = self.get_slider_width() as i32;
         if new_value != self.slider_offset_axis {
@@ -1299,7 +1299,7 @@ impl Slider {
             .min(self.range);
     }
 
-    fn change_slider_value_vertical(&mut self, mouse_position: Point) {
+    pub fn change_slider_value_vertical(&mut self, mouse_position: Point) {
         let new_value = mouse_position.y();
         let slider_height = self.get_slider_width() as i32;
         if new_value != self.slider_offset_axis {
