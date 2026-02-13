@@ -18,9 +18,10 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json};
 
-use crate::colors::*;
+use crate::benchmarks::PathData;
 use crate::components::Component;
 use crate::pathfinding::Agent;
+use crate::{colors::*, fileDialog};
 
 #[derive(Copy, Clone, PartialEq, Deserialize, Serialize)]
 pub enum TileType {
@@ -109,7 +110,7 @@ impl Tile {
                 if self.weight > 1 {
                     canvas.set_draw_color(Color::RGB(
                         255,
-                        255 - (self.weight / 2) as u8,
+                        230 - (self.weight / 2) as u8,
                         255 - self.weight as u8,
                     ));
                 } else {
@@ -503,10 +504,14 @@ impl Board {
         self.cached_grid.borrow_mut().replace(grid);
     }
 
-    pub fn save_to_file(&self, filepath: &str) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn save_to_file(
+        &self,
+        filepath: &str,
+        file_name: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self)?;
         //println!("{}", json);
-        fs::write(filepath.to_owned() + "/test.json", json)?;
+        fs::write(filepath.to_owned() + "/" + file_name.trim() + ".json", json)?;
         Ok(())
     }
 
@@ -525,6 +530,23 @@ impl Board {
         }
     }
 
+    fn create_data_map(&self) -> HashMap<usize, PathData> {
+        let mut data_map: HashMap<usize, PathData> = HashMap::new();
+        for (i, _) in self.agents.iter().enumerate() {
+            data_map.insert(
+                i,
+                PathData {
+                    wcf: vec![],
+                    memory: vec![],
+                    time: vec![],
+                    steps: vec![],
+                    path_cost: vec![],
+                },
+            );
+        }
+        return data_map;
+    }
+
     pub fn update_board(
         &mut self,
         canvas: &mut Canvas<Window>,
@@ -534,14 +556,22 @@ impl Board {
         iterations: u8,
         weight_range: u8,
     ) {
+        if self.agents.is_empty() {
+            self.create_agents();
+        }
         let mut obstacles = obstacles as usize;
+        let mut data_map: HashMap<usize, PathData> = self.create_data_map();
         for i in 0..iterations {
             let mut valid_iteration = false;
             while !valid_iteration {
                 if doubling {
                     self.generate_random_grid(
                         weight_range.min(255),
-                        obstacles.min((self.tile_amount_x * self.tile_amount_y / 2) as usize),
+                        obstacles.min(
+                            (self.tile_amount_x * self.tile_amount_y
+                                / (2 * self.starts.len() as u32))
+                                as usize,
+                        ),
                     );
                 }
                 if self.agents.is_empty() {
@@ -573,7 +603,6 @@ impl Board {
                                     Some(path_cost),
                                 )
                             } else {
-                                println!("NOPE");
                                 (i, None, None, None, None, None, None)
                             }
                         });
@@ -592,6 +621,15 @@ impl Board {
                             } else {
                                 // Update agent
                                 self.agents[index].path = path.unwrap();
+                                if let Some(agent_index) = data_map.get_mut(&index) {
+                                    agent_index.update_all(
+                                        wcf.unwrap_or_default(),
+                                        memory.unwrap_or_default(),
+                                        time.unwrap_or_default(),
+                                        steps.unwrap_or_default(),
+                                        path_cost.unwrap_or_default(),
+                                    );
+                                }
                                 agents_completed_count += 1;
                             }
                         }
@@ -639,6 +677,11 @@ impl Board {
                     canvas.present();
                     thread::sleep(Duration::from_millis(16));
                 }
+
+                for (_, data) in &data_map {
+                    println!("{}", format!("{}", data));
+                }
+                fileDialog::save_data(&data_map);
 
                 let mut grid = self.grid();
                 self.agents.iter_mut().for_each(|agent| {

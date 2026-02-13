@@ -9,6 +9,8 @@ use std::{
 use serde_json::{self, Value};
 use std::collections::HashMap;
 
+use crate::benchmarks::PathData;
+
 /// Walks Directory and gets file names for file selection
 
 pub struct DirectoryNode {
@@ -182,4 +184,18 @@ pub fn save_file(path: String, file_content: String) {
     let path = path + "/test.json";
     println!("{}", path);
     write(path, file_content).expect("bad");
+}
+
+pub fn save_data(data: &HashMap<usize, PathData>) {
+    let results = serde_json::to_string_pretty(data).expect("N");
+    write(
+        env::current_dir()
+            .expect("No directory")
+            .to_str()
+            .expect("I")
+            .to_string()
+            + "/data.json",
+        results,
+    )
+    .unwrap();
 }
