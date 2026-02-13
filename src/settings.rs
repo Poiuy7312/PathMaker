@@ -8,7 +8,6 @@ pub struct GameSettings {
     pub window_width: u32,
     pub window_height: u32,
     pub fullscreen: bool,
-
     // Gameplay settings
     pub enable_dynamic_generation: bool,
     pub enable_doubling_experiment: bool,
@@ -25,6 +24,7 @@ pub struct GameSettings {
     pub gen_weight: u8,
     pub gen_obstacles: u16,
     pub iterations: u8,
+    pub save_file: String,
 
     // File settings
     pub last_opened_file: Option<String>,
@@ -50,6 +50,7 @@ impl Default for GameSettings {
             last_opened_file: None,
             last_save_directory: String::from("/home"),
             auto_save_enabled: false,
+            save_file: "/test.json".to_string(),
             weight: 1,
             gen_weight: 1,
             gen_obstacles: 2,

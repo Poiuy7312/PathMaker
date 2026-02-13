@@ -25,13 +25,13 @@ pub trait PathfindingAlgorithm {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
-    ) -> (Vec<(i32, i32)>, u128);
+    ) -> (Vec<(i32, i32)>, u32);
 
     /// Get the name of this algorithm (for debugging/UI)
     fn name(&self) -> &str;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Agent {
     pub start: (i32, i32),
     pub goal: (i32, i32),
@@ -39,11 +39,11 @@ pub struct Agent {
     pub path: Vec<(i32, i32)>,
 }
 
-fn get_overall_path_weight(path: &Vec<(i32, i32)>, map: &HashMap<(i32, i32), Tile>) -> u128 {
-    let mut total_weight: u128 = 0;
+fn get_overall_path_weight(path: &Vec<(i32, i32)>, map: &HashMap<(i32, i32), Tile>) -> u32 {
+    let mut total_weight: u32 = 0;
     for moves in path {
         if let Some(tile) = map.get(&moves) {
-            total_weight += tile.weight as u128;
+            total_weight += tile.weight as u32;
         }
     }
     return total_weight;
@@ -54,7 +54,7 @@ impl Agent {
         &mut self,
         algorithm: &str,
         map: &HashMap<(i32, i32), Tile>,
-    ) -> (bool, Vec<(i32, i32)>, f64, u64, Duration, u128, u128) {
+    ) -> (bool, Vec<(i32, i32)>, f64, u64, Duration, u32, u32) {
         let allocated = thread::allocatedp::mib().unwrap();
         let mut all_possible_move: Vec<&(i32, i32)> = vec![];
         for (loc, tile) in map {
@@ -73,6 +73,7 @@ impl Agent {
         epoch::advance().unwrap();
         let after = allocated.read().unwrap().get();
         let time = now.elapsed();
+        let weight = get_overall_path_weight(&path, map);
 
         return (
             true,
@@ -81,7 +82,7 @@ impl Agent {
             after - before,
             time,
             steps,
-            get_overall_path_weight(&self.path, map),
+            weight,
         );
     }
     pub fn goal_reached(&self) -> bool {
@@ -164,11 +165,11 @@ impl PathfindingAlgorithm for GreedySearch {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
-    ) -> (Vec<(i32, i32)>, u128) {
+    ) -> (Vec<(i32, i32)>, u32) {
         let mut current = start;
         let mut path: Vec<(i32, i32)> = vec![];
         let mut black_list: Vec<(i32, i32)> = vec![];
-        let mut steps: u128 = 0;
+        let mut steps: u32 = 0;
         while current != goal {
             steps += 1;
             let mut good_moves: Vec<(i32, i32)> = vec![];
@@ -229,7 +230,7 @@ impl PathfindingAlgorithm for BreadthFirstSearch {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), Tile>,
-    ) -> (Vec<(i32, i32)>, u128) {
+    ) -> (Vec<(i32, i32)>, u32) {
         if start == goal {
             return (vec![start], 1);
         }
@@ -292,7 +293,7 @@ impl PathfindingAlgorithm for AStarSearch {
         start: (i32, i32),
         goal: (i32, i32),
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
-    ) -> (Vec<(i32, i32)>, u128) {
+    ) -> (Vec<(i32, i32)>, u32) {
         #[derive(Clone, Eq, PartialEq)]
         struct Node {
             cost: i32,
@@ -325,7 +326,7 @@ impl PathfindingAlgorithm for AStarSearch {
         });
         g_score.insert(start, 0);
 
-        let mut steps: u128 = 0;
+        let mut steps: u32 = 0;
 
         while let Some(Node {
             position: current, ..
