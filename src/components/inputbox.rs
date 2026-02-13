@@ -18,6 +18,7 @@ pub struct InputBox {
     pub active: bool,
     pub text_color: Color,
     pub background_color: Color,
+    pub clicked_on: bool,
     pub height: u32,
     pub width: u32,
     pub id: String,
@@ -31,7 +32,7 @@ impl Component for InputBox {
             if self.text.len() == 0 {
                 self.text = " ".to_string();
             }
-            self.active = true;
+            self.clicked_on = true;
             return (true, Some(self.get_id()));
         }
         return (false, None);
@@ -184,5 +185,9 @@ impl Interface for InputBox {
 impl InputBox {
     pub fn change_text(&mut self, new_text: String) {
         self.text = new_text;
+    }
+
+    pub fn clicked_on(&self) -> bool {
+        self.clicked_on
     }
 }
