@@ -155,16 +155,30 @@ impl Interface for InputBox {
                 if text_map.width() >= box_background.width() {
                     text_map.set_width(box_background.width() * 5 / 6);
                 }
-                let font_surface = font
-                    .render(&self.text)
-                    .blended(self.text_color)
-                    .map_err(|e| e.to_string())
-                    .unwrap();
-                let font_texture: Texture<'_> = texture_creator
-                    .create_texture_from_surface(&font_surface)
-                    .map_err(|e| e.to_string())
-                    .unwrap();
-                canvas.copy(&font_texture, None, text_map).unwrap();
+                if self.clicked_on() {
+                    let text = self.text.clone() + "|";
+                    let font_surface = font
+                        .render(&text)
+                        .blended(self.text_color)
+                        .map_err(|e| e.to_string())
+                        .unwrap();
+                    let font_texture: Texture<'_> = texture_creator
+                        .create_texture_from_surface(&font_surface)
+                        .map_err(|e| e.to_string())
+                        .unwrap();
+                    canvas.copy(&font_texture, None, text_map).unwrap();
+                } else {
+                    let font_surface = font
+                        .render(&self.text)
+                        .blended(self.text_color)
+                        .map_err(|e| e.to_string())
+                        .unwrap();
+                    let font_texture: Texture<'_> = texture_creator
+                        .create_texture_from_surface(&font_surface)
+                        .map_err(|e| e.to_string())
+                        .unwrap();
+                    canvas.copy(&font_texture, None, text_map).unwrap();
+                }
             }
             false => {
                 let font_surface = font
