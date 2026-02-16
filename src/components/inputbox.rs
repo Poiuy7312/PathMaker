@@ -10,6 +10,7 @@ use sdl2::video::{Window, WindowContext};
 
 use crate::components::button::Interface;
 use crate::components::Component;
+use crate::util;
 use sdl2::ttf;
 
 pub struct InputBox {
@@ -130,12 +131,19 @@ impl Interface for InputBox {
     ) {
         let rectangle = self.get_rect(self.location);
         let box_outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);
+        let available_width = (self.width as i32 - 10) as u32;
+        let text_len = if self.text.len() > 0 {
+            self.text.chars().count() as u32
+        } else {
+            self.default_text.chars().count() as u32
+        };
         let box_background: Rect = rectangle;
+        let font_size = util::calculate_scaled_font_size(text_len, available_width);
         let text_map_x = box_background.left() + 5;
         let text_map: Rect = Rect::new(
             text_map_x,
             rectangle.center().y(),
-            self.width / 2,
+            font_size,
             self.height / 2,
         );
 
