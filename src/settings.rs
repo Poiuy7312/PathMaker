@@ -50,7 +50,7 @@ impl Default for GameSettings {
             last_opened_file: None,
             last_save_directory: String::from("/home"),
             auto_save_enabled: false,
-            save_file: "/test.json".to_string(),
+            save_file: "test".to_string(),
             weight: 1,
             gen_weight: 1,
             gen_obstacles: 2,
