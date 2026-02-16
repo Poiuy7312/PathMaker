@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use sdl2::rect::{Point, Rect};
 
@@ -58,6 +59,37 @@ pub fn walk_tree(
 }
 
 */
+
+pub fn add_file_to_dir_map(
+    directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>>,
+    path: String,
+    file_name: &str,
+) {
+    let full_path = path.clone() + "/" + file_name + ".json";
+    directories.borrow_mut().insert(
+        full_path.to_string(),
+        (
+            StandardButton {
+                height: 25,
+                width: 200,
+                location: Point::new(0, 62),
+                text_color: WHITE,
+                background_color: QUATERNARY_COLOR,
+                hover: RefCell::new(false),
+                text: file_name.to_string(),
+                id: full_path.to_string(),
+                active: false,
+                filter: None,
+                drawn: RefCell::new(false),
+                cached_texture: None,
+            },
+            Vec::new(),
+        ),
+    );
+    if let Some(directory) = directories.borrow_mut().get_mut(&path) {
+        directory.1.push(full_path);
+    }
+}
 
 pub fn get_dir_map(
     node: &fileDialog::DirectoryNode,

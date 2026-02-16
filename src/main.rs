@@ -248,7 +248,7 @@ pub fn main() {
             text: String::new(),
             id: "Save_File_Slider".to_string(),
             active: false,
-            range: 0,
+            range: 1,
             value: 0,
             slider_offset_axis: 0,
             drawn: RefCell::new(false),
@@ -257,6 +257,7 @@ pub fn main() {
             minimal: true,
         }),
         filter_dir: true,
+        cached_button_list: RefCell::new(None),
     });
 
     let save_widget_accept: Box<dyn Interface> = Box::new(StandardButton {
@@ -605,7 +606,7 @@ pub fn main() {
             text: String::new(),
             id: "Select_File_Slider".to_string(),
             active: false,
-            range: 0,
+            range: 1,
             value: 0,
             slider_offset_axis: 0,
             drawn: RefCell::new(false),
@@ -614,6 +615,7 @@ pub fn main() {
             minimal: true,
         }),
         filter_dir: false,
+        cached_button_list: RefCell::new(None),
     });
 
     let go_back_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -891,11 +893,14 @@ pub fn main() {
                                 game_board.draw(&mut canvas);
                             }
                             "Save_Wid_Save" => {
+                                let save_path = &save_widget.get_result().expect("No path given");
+                                util::add_file_to_dir_map(
+                                    Rc::clone(&directories),
+                                    save_path.to_string(),
+                                    &settings.save_file,
+                                );
                                 game_board
-                                    .save_to_file(
-                                        &save_widget.get_result().expect("No path given"),
-                                        &settings.save_file,
-                                    )
+                                    .save_to_file(&save_path, &settings.save_file)
                                     .unwrap();
                                 save_file = false;
                                 save_widget.change_active(false);
