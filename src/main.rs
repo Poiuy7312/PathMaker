@@ -733,6 +733,7 @@ pub fn main() {
                 &mut canvas,
                 &settings.selected_algorithm,
                 settings.enable_doubling_experiment,
+                settings.enable_dynamic_generation,
                 settings.gen_obstacles,
                 settings.iterations,
                 settings.gen_weight.max(1),
@@ -1245,6 +1246,7 @@ pub fn main() {
                                             true => {}
                                             false => {
                                                 display.text.pop();
+                                                settings.save_file = display.text.clone();
                                             }
                                         }
                                     }

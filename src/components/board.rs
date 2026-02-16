@@ -552,6 +552,7 @@ impl Board {
         canvas: &mut Canvas<Window>,
         algorithm: &str,
         doubling: bool,
+        dyn_gen: bool,
         obstacles: u16,
         iterations: u8,
         weight_range: u8,
@@ -564,7 +565,7 @@ impl Board {
         for i in 0..iterations {
             let mut valid_iteration = false;
             while !valid_iteration {
-                if doubling {
+                if doubling || dyn_gen {
                     self.generate_random_grid(
                         weight_range.min(255),
                         obstacles.min(
