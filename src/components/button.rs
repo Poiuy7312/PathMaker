@@ -14,21 +14,9 @@ use crate::colors::{
     BLACK, HOVER_COLOR, PRIMARY_COLOR, QUATERNARY_COLOR, SECONDARY_COLOR, TERTIARY_COLOR, WHITE,
 };
 use crate::components::Component;
+use crate::util;
 
 use sdl2::ttf;
-
-fn calculate_scaled_font_size(text_len: u32, available_width: u32) -> u32 {
-    let char_width = 8;
-    let estimated_width = text_len * char_width;
-
-    if estimated_width > available_width {
-        let scale = available_width as f32 / estimated_width as f32;
-        (estimated_width as f32 * scale) as u32
-    } else {
-        estimated_width
-    }
-    .max(4) // minimum font size
-}
 
 pub trait Interface: Component {
     fn get_rect(&self, point: Point) -> Rect;
@@ -187,7 +175,7 @@ impl Interface for StandardButton {
         let button_background: Rect = self.get_rect(self.location);
         let available_width = (self.width as i32 - 10) as u32;
         let text_len = self.text.chars().count() as u32;
-        let font_size = calculate_scaled_font_size(text_len, available_width);
+        let font_size = util::calculate_scaled_font_size(text_len, available_width);
         let button_outline =
             Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
         let mut text_map = Rect::from_center(button_background.center(), font_size, 20);
@@ -449,7 +437,7 @@ impl Interface for Dropdown {
         let button_background: Rect = self.get_rect(self.location);
         let available_width = ((self.width * 8 / 10) - 40) as u32;
         let text_len = self.text.chars().count() as u32;
-        let font_size = calculate_scaled_font_size(text_len, available_width);
+        let font_size = util::calculate_scaled_font_size(text_len, available_width);
         let button_outline =
             Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
         let text_map = Rect::new(
@@ -946,7 +934,7 @@ impl Interface for CheckBox {
 
         let available_width = (self.width as i32 - 30) as u32;
         let text_len = self.label.chars().count() as u32;
-        let font_size = calculate_scaled_font_size(text_len, available_width);
+        let font_size = util::calculate_scaled_font_size(text_len, available_width);
         let checkbox_button = Rect::new(
             button_background.x() + 5,
             button_background.center().y(),
@@ -956,9 +944,9 @@ impl Interface for CheckBox {
         let checkbox_outline = Rect::from_center(checkbox_button.center(), 15, 15);
         let text_map = Rect::new(
             checkbox_button.right() + 5,
-            checkbox_button.top(),
+            checkbox_outline.top(),
             font_size,
-            checkbox_button.height(),
+            checkbox_outline.height(),
         );
 
         font.set_style(sdl2::ttf::FontStyle::BOLD);
@@ -1174,7 +1162,7 @@ impl Interface for Slider {
         let button_background: Rect = self.get_rect(self.location);
         let available_width = (self.width as i32 - 10) as u32;
         let text_len = self.text.chars().count() as u32;
-        let font_size = calculate_scaled_font_size(text_len, available_width);
+        let font_size = util::calculate_scaled_font_size(text_len, available_width);
         let button_outline =
             Rect::from_center(button_background.center(), self.width + 5, self.height + 5);
         let mut text_map = Rect::new(

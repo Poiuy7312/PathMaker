@@ -60,6 +60,19 @@ pub fn walk_tree(
 
 */
 
+pub fn calculate_scaled_font_size(text_len: u32, available_width: u32) -> u32 {
+    let char_width = 8;
+    let estimated_width = text_len * char_width;
+
+    if estimated_width > available_width {
+        let scale = available_width as f32 / estimated_width as f32;
+        (estimated_width as f32 * scale) as u32
+    } else {
+        estimated_width
+    }
+    .max(4) // minimum font size
+}
+
 pub fn add_file_to_dir_map(
     directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>>,
     path: String,
