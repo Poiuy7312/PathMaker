@@ -25,6 +25,7 @@ pub trait Interface: Component {
     fn draw_priority(&self) -> u8;
     fn dirty_parent(&self) -> bool;
     fn deactivate_parent(&self) -> bool;
+    fn after_click(&self) -> bool;
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
@@ -224,6 +225,10 @@ impl Interface for StandardButton {
             .expect("Button unable to display text");
         self.change_drawn(true);
     }
+
+    fn after_click(&self) -> bool {
+        true
+    }
 }
 
 impl ValidDropdownOption for StandardButton {
@@ -395,6 +400,11 @@ impl Interface for Dropdown {
     fn is_static(&self) -> bool {
         true
     }
+
+    fn after_click(&self) -> bool {
+        true
+    }
+
     fn has_indent(&self) -> bool {
         false
     }
@@ -732,6 +742,10 @@ impl Interface for OptionButton {
         false
     }
 
+    fn after_click(&self) -> bool {
+        true
+    }
+
     fn deactivate_parent(&self) -> bool {
         false
     }
@@ -910,6 +924,10 @@ impl Interface for CheckBox {
 
     fn deactivate_parent(&self) -> bool {
         false
+    }
+
+    fn after_click(&self) -> bool {
+        true
     }
 
     fn is_static(&self) -> bool {
@@ -1133,6 +1151,10 @@ impl Interface for Slider {
     }
 
     fn deactivate_parent(&self) -> bool {
+        false
+    }
+
+    fn after_click(&self) -> bool {
         false
     }
 
