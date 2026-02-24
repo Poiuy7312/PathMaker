@@ -32,21 +32,31 @@ pub struct Widget {
 }
 
 impl Widget {
-    pub fn on_click(&mut self, mouse_state: Point) -> (Option<String>, (bool, Option<String>)) {
+    pub fn on_click(
+        &mut self,
+        after: bool,
+        mouse_state: Point,
+    ) -> (Option<String>, (bool, Option<String>)) {
         let mut dirty = false;
         let mut result: (Option<String>, (bool, Option<String>)) = (None, (false, None));
 
         if self.important_component_clicked {
-            self.change_drawn(false);
-            for (_, button) in self.buttons.iter_mut().filter(|(_, b)| b.dirty_parent()) {
-                let result = button.on_click(mouse_state);
-                if result.0 {
-                    self.important_component_clicked = false;
-                    let button_id = button.get_id();
-                    return (Some(button_id), result);
+            if after {
+                println!("Yellow");
+                self.change_drawn(false);
+                for (_, button) in self.buttons.iter_mut().filter(|(_, b)| b.dirty_parent()) {
+                    let result = button.on_click(mouse_state);
+                    if result.0 {
+                        self.important_component_clicked = false;
+                        let button_id = button.get_id();
+                        return (Some(button_id), result);
+                    }
                 }
+            } else {
+                return (None, (false, None));
             }
         }
+        println!("Yep");
         if let Some(cached_map) = &self.cached_interface_location {
             let rows = self.layout.len() as u32;
             let cols = self.layout[0].len() as u32;
@@ -72,13 +82,28 @@ impl Widget {
                 if let Some(button) = self.buttons.get_mut(button_id) {
                     if button.dirty_parent() {
                         if button.deactivate_parent() {
-                            self.important_component_clicked = !self.important_component_clicked;
+                            if after {
+                                self.important_component_clicked =
+                                    !self.important_component_clicked;
+                            }
                         }
                         dirty = true;
                         println!("Yes");
                     }
                     println!("S: {:#?}", button_id);
-                    result = (Some(button_id.to_string()), button.on_click(mouse_state));
+                    if after {
+                        if button.after_click() {
+                            result = (Some(button_id.to_string()), button.on_click(mouse_state));
+                        } else {
+                            result = (None, (false, None));
+                        }
+                    } else {
+                        if !button.after_click() {
+                            result = (Some(button_id.to_string()), button.on_click(mouse_state));
+                        } else {
+                            result = (None, (false, None));
+                        }
+                    }
                 }
             }
         } else {
@@ -88,14 +113,29 @@ impl Widget {
                     println!("C: {}", button_id);
                     if button.dirty_parent() {
                         if button.deactivate_parent() {
-                            self.important_component_clicked = !self.important_component_clicked;
+                            if after {
+                                self.important_component_clicked =
+                                    !self.important_component_clicked;
+                            }
                         }
                         dirty = true;
                         println!("Yes");
                     } else if button.is_drawn() {
                         button.change_drawn(false);
                     }
-                    result = (Some(button_id), button.on_click(mouse_state));
+                    if after {
+                        if button.after_click() {
+                            result = (Some(button_id), button.on_click(mouse_state));
+                        } else {
+                            result = (None, (false, None));
+                        }
+                    } else {
+                        if !button.after_click() {
+                            result = (Some(button_id), button.on_click(mouse_state));
+                        } else {
+                            result = (None, (false, None));
+                        }
+                    }
                     break;
                 }
             }

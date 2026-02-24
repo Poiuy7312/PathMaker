@@ -99,6 +99,10 @@ impl Interface for InputBox {
         false
     }
 
+    fn after_click(&self) -> bool {
+        true
+    }
+
     fn deactivate_parent(&self) -> bool {
         false
     }
