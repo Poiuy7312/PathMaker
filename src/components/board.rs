@@ -440,15 +440,24 @@ impl Board {
         self.height / self.tile_amount_y
     }
 
-    pub fn generate_random_grid(&self, weight_range: u8, obstacle_number: usize) {
+    pub fn generate_random_grid(
+        &self,
+        weight_range: u8,
+        obstacle_number: usize,
+        weighted_number: usize,
+    ) {
         let mut grid = HashMap::new();
         let tile_width = self.tile_width();
         let tile_height = self.tile_height();
         let mut rng = rand::rng();
+        let obstacle_number = obstacle_number.min(
+            (self.tile_amount_x * self.tile_amount_y / (2 * self.starts.len().max(1) as u32))
+                as usize,
+        );
         for i in 0..self.tile_amount_x {
             for j in 0..self.tile_amount_y {
                 let position: (i32, i32) = (i as i32, j as i32);
-                let num: u8 = rng.random_range(0..=weight_range).max(1);
+                let num: u8 = 1;
                 if self.starts.contains(&position) {
                     grid.insert(
                         position,
@@ -490,17 +499,34 @@ impl Board {
         }
 
         let new_grid = grid.clone();
+        // Collect all floor tile positions
         let selected: Vec<&(i32, i32)> = new_grid
             .iter()
             .filter(|(_, t)| t.is_floor())
-            .map(|a| a.0)
-            .choose_multiple(&mut rng, obstacle_number);
+            .map(|(pos, _)| pos)
+            .collect();
+        let selected_length = selected.len();
+        let total_special = (obstacle_number + weighted_number).min(selected_length);
 
-        for tiles in selected {
-            if let Some(tile) = grid.get_mut(tiles) {
+        let selected = selected.iter().choose_multiple(&mut rng, total_special);
+
+        // Choose unique positions for obstacles and weighted tiles in one pass
+
+        // Assign obstacles
+        for pos in selected.iter().take(obstacle_number) {
+            if let Some(tile) = grid.get_mut(pos) {
                 tile.change_tile_type(TileType::Obstacle);
             }
         }
+
+        // Assign weighted tiles (skip those already made obstacles)
+        for pos in selected.iter().skip(obstacle_number) {
+            if let Some(tile) = grid.get_mut(pos) {
+                let weight = rng.random_range(1..=weight_range.min(255));
+                tile.weight = weight;
+            }
+        }
+
         self.cached_grid.borrow_mut().replace(grid);
     }
 
@@ -553,7 +579,8 @@ impl Board {
         algorithm: &str,
         doubling: bool,
         dyn_gen: bool,
-        obstacles: u16,
+        obstacles: u32,
+        weighted_tiles: u32,
         iterations: u8,
         weight_range: u8,
     ) {
@@ -568,11 +595,8 @@ impl Board {
                 if doubling || dyn_gen {
                     self.generate_random_grid(
                         weight_range.min(255),
-                        obstacles.min(
-                            (self.tile_amount_x * self.tile_amount_y
-                                / (2 * self.starts.len() as u32))
-                                as usize,
-                        ),
+                        obstacles as usize,
+                        weighted_tiles as usize,
                     );
                 }
                 if self.agents.is_empty() {
@@ -618,6 +642,10 @@ impl Board {
                             if path.is_none() {
                                 // If any path is not possible, regenerate
                                 valid_iteration = false;
+                                if !doubling || !dyn_gen {
+                                    println!("No possible Path");
+                                    return;
+                                }
                                 break;
                             } else {
                                 // Update agent
