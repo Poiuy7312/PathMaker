@@ -58,6 +58,10 @@ impl Interface for FileExplorer {
         false
     }
 
+    fn after_click(&self) -> bool {
+        true
+    }
+
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
