@@ -21,8 +21,8 @@ pub struct GameSettings {
     pub tiles_x: u32,
     pub tiles_y: u32,
     pub weight: u8,
-    pub gen_weight: u8,
-    pub gen_obstacles: u16,
+    pub gen_obstacles: u32,
+    pub weight_count: u32,
     pub iterations: u8,
     pub save_file: String,
 
@@ -52,8 +52,8 @@ impl Default for GameSettings {
             auto_save_enabled: false,
             save_file: "test".to_string(),
             weight: 1,
-            gen_weight: 1,
-            gen_obstacles: 2,
+            gen_obstacles: 0,
+            weight_count: 0,
             iterations: 1,
         }
     }
