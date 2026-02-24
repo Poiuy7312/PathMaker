@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{env, thread};
+use std::{env, fs, thread};
 
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -60,7 +60,10 @@ pub fn main() {
         .position_centered()
         .build()
         .expect("Failed to render Window");
-    let window_icon = Surface::from_file("src/assets/Icon.svg").unwrap();
+    let icon_path = fs::canonicalize("src/assets/Icon.svg").expect("Path does not exist");
+    let font_path = fs::canonicalize("src/assets/open-sans/OpenSans-Semibold.ttf")
+        .expect("Path does not exist");
+    let window_icon = Surface::from_file(icon_path).unwrap();
     window.set_icon(window_icon);
     let mut canvas = window.into_canvas().build().unwrap();
 
@@ -68,12 +71,11 @@ pub fn main() {
     let directory_tree = fileDialog::get_file_tree();
     let mut select_file: bool = false; // Check if select file widget is active
     let mut save_file: bool = false; // Check if save file widget is active
-    let mut gen_menu: bool = false; // Check if controls for board generation are active
 
     let ttf_context: ttf::Sdl2TtfContext = ttf::init().unwrap();
 
     let mut font: ttf::Font<'_, 'static> = ttf_context
-        .load_font("src/assets/open-sans/OpenSans-Semibold.ttf", 124)
+        .load_font(font_path, 124)
         .expect("Unable to Load Font");
 
     /*----- File Explorer Components ----- */
@@ -130,6 +132,20 @@ pub fn main() {
                     drawn: RefCell::new(false),
                     cached_texture: None,
                 },
+                StandardButton {
+                    height: 0,
+                    width: 0,
+                    location: Point::new(0, 0),
+                    text_color: WHITE,
+                    background_color: PRIMARY_COLOR,
+                    hover: RefCell::new(false),
+                    text: "JPSW".to_string(),
+                    id: "JPSW".to_string(),
+                    filter: None,
+                    active: false,
+                    drawn: RefCell::new(false),
+                    cached_texture: None,
+                },
             ]),
             filter: None,
             drawn: RefCell::new(false),
@@ -142,10 +158,46 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: BLACK,
         background_color: SECONDARY_COLOR,
-        text: "Weight_Draw".to_string(),
+        text: "Weight Value".to_string(),
         id: "Weight_Draw".to_string(),
         active: false,
         range: 255,
+        slider_offset_axis: 0,
+        drawn: RefCell::new(false),
+        cached_texture: None,
+        value: 0,
+        is_vertical: false,
+        minimal: false,
+    });
+
+    let obstacle_count: Box<dyn Interface> = Box::new(Slider {
+        height: 0,
+        width: 0,
+        location: Point::new(0, 0),
+        text_color: BLACK,
+        background_color: SECONDARY_COLOR,
+        text: "Obstacle Count".to_string(),
+        id: "Obstacle_Count".to_string(),
+        active: false,
+        range: tiles_x * tiles_y,
+        slider_offset_axis: 0,
+        drawn: RefCell::new(false),
+        cached_texture: None,
+        value: 0,
+        is_vertical: false,
+        minimal: false,
+    });
+
+    let weight_count: Box<dyn Interface> = Box::new(Slider {
+        height: 0,
+        width: 0,
+        location: Point::new(0, 0),
+        text_color: BLACK,
+        background_color: SECONDARY_COLOR,
+        text: "Weighted Count".to_string(),
+        id: "Weighted_Tile_Count".to_string(),
+        active: false,
+        range: tiles_x * tiles_y,
         slider_offset_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
@@ -399,6 +451,9 @@ pub fn main() {
         vec!["Piece_Select"],
         vec!["Path_Selector"],
         vec!["Weight_Draw"],
+        vec!["Obstacle_Count"],
+        vec!["Weighted_Tile_Count"],
+        vec!["Iterations"],
         vec!["Gen_Grid"],
         vec!["DG_Select"],
         vec!["DE_Select"],
@@ -407,42 +462,6 @@ pub fn main() {
         vec!["START"],
         vec!["START"],
     ];
-
-    let weight_gen_value: Box<dyn Interface> = Box::new(Slider {
-        height: 0,
-        width: 0,
-        location: Point::new(0, 0),
-        text_color: BLACK,
-        background_color: SECONDARY_COLOR,
-        text: "Weight_Range".to_string(),
-        id: "Weight_Range".to_string(),
-        active: false,
-        range: 255,
-        slider_offset_axis: 0,
-        drawn: RefCell::new(false),
-        cached_texture: None,
-        value: 0,
-        is_vertical: false,
-        minimal: false,
-    });
-
-    let obstacle_gen_value: Box<dyn Interface> = Box::new(Slider {
-        height: 0,
-        width: 0,
-        location: Point::new(0, 0),
-        text_color: BLACK,
-        background_color: SECONDARY_COLOR,
-        text: "Number of Obstacles".to_string(),
-        id: "Number of Obstacles".to_string(),
-        active: false,
-        range: 400,
-        slider_offset_axis: 0,
-        drawn: RefCell::new(false),
-        cached_texture: None,
-        value: 0,
-        is_vertical: false,
-        minimal: false,
-    });
 
     let iteration_gen_value: Box<dyn Interface> = Box::new(Slider {
         height: 0,
@@ -462,49 +481,6 @@ pub fn main() {
         minimal: false,
     });
 
-    let Gen_Ok: Box<dyn Interface> = Box::new(StandardButton {
-        height: 0,
-        width: 0,
-        location: Point::new(0, 0),
-        text_color: BLACK,
-        background_color: GREEN,
-        hover: RefCell::new(false),
-        text: String::from("Ok"),
-        id: String::from("Ok_Gen"),
-        filter: None,
-        active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
-    });
-
-    let gen_control_layout: Vec<Vec<&'static str>> = vec![
-        vec!["Weight_Range"],
-        vec!["Number of Obstacles"],
-        vec!["Iterations"],
-        vec!["Ok_Gen"],
-    ];
-    let gen_control_buttons = HashMap::from([
-        ("Weight_Range", weight_gen_value),
-        ("Number of Obstacles", obstacle_gen_value),
-        ("Iterations", iteration_gen_value),
-        ("Ok_Gen", Gen_Ok),
-    ]);
-
-    let mut gen_control_widget = Widget {
-        location: Point::new(window_width as i32 * 1 / 4, 0),
-        id: String::from("GEN_WIDGET"),
-        result: None,
-        height: window_height / 2,
-        width: window_width / 2,
-        buttons: gen_control_buttons,
-        layout: gen_control_layout,
-        active: false,
-        drawn: false,
-        cached_draw_order: None,
-        cached_interface_location: None,
-        important_component_clicked: false,
-    };
-
     // Tells a widget what buttons to draw.
     let board_control_buttons = HashMap::from([
         ("Upload Map", upload_map_button),
@@ -517,6 +493,9 @@ pub fn main() {
         ("Path_Selector", path_selector),
         ("Piece_Select", piece_select),
         ("Weight_Draw", weight_draw_value),
+        ("Obstacle_Count", obstacle_count),
+        ("Weighted_Tile_Count", weight_count),
+        ("Iterations", iteration_gen_value),
         ("Gen_Grid", generate_grid),
     ]);
 
@@ -720,11 +699,7 @@ pub fn main() {
                 save_widget.get_location().y(),
             ));
             save_widget.change_drawn(false);
-            gen_control_widget.change_location(Point::new(
-                window_width as i32 / 2 - gen_control_widget.get_width() as i32 / 2,
-                gen_control_widget.get_location().y(),
-            ));
-            gen_control_widget.change_drawn(false);
+
             board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
         }
 
@@ -735,8 +710,9 @@ pub fn main() {
                 settings.enable_doubling_experiment,
                 settings.enable_dynamic_generation,
                 settings.gen_obstacles,
+                settings.weight_count,
                 settings.iterations,
-                settings.gen_weight.max(1),
+                settings.weight.max(1),
             );
             run_game_board = false;
         }
@@ -789,12 +765,6 @@ pub fn main() {
             );*/
 
             file_select_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
-        } else if gen_menu {
-            board_control_widget.change_active(false);
-            board_control_widget.change_drawn(false);
-            gen_control_widget.change_active(true);
-
-            gen_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
 
         /*------- File Selection Menu -------*/
         } else {
@@ -818,54 +788,54 @@ pub fn main() {
                 game_board.draw(&mut canvas);
             }
             mouse_clicked_on = true;
-            if !select_file || save_file || gen_menu {
-                if let Some(slider) = board_control_widget.buttons.get_mut("Weight_Draw") {
-                    if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
-                        if sl.on_click(mouse_position).0 {
-                            settings.weight = sl.value.max(1) as u8;
-                            match game_board.selected_piece_type {
-                                TileType::Player => {}
-                                TileType::Enemy => {}
-                                TileType::Floor => {}
-                                TileType::Obstacle => {}
-                                _ => {
-                                    game_board.selected_piece_type =
-                                        TileType::Weighted(settings.weight)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if gen_menu {
-                let (clicked_button, (_, _)) = gen_control_widget.on_click(mouse_position);
-                println!("E: {:#?}", clicked_button);
-
+            if !select_file || save_file {
+                let (clicked_button, (_, _)) = board_control_widget.on_click(false, mouse_position);
                 match clicked_button {
                     Some(name) => match name.as_str() {
-                        "Weight_Range" => {
-                            if let Some(slider) = gen_control_widget.buttons.get_mut("Weight_Range")
-                            {
-                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
-                                    settings.gen_weight = sl.value.max(1) as u8;
-                                }
-                            }
-                        }
-                        "Number of Obstacles" => {
+                        "Weight_Draw" => {
                             if let Some(slider) =
-                                gen_control_widget.buttons.get_mut("Number of Obstacles")
+                                board_control_widget.buttons.get_mut("Weight_Draw")
                             {
-                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
-                                    settings.gen_obstacles = sl.value as u16;
+                                if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
+                                    settings.weight = sl.value.max(1) as u8;
+                                    match game_board.selected_piece_type {
+                                        TileType::Player => {}
+                                        TileType::Enemy => {}
+                                        TileType::Floor => {}
+                                        TileType::Obstacle => {}
+                                        _ => {
+                                            game_board.selected_piece_type =
+                                                TileType::Weighted(settings.weight)
+                                        }
+                                    }
                                 }
-                            }
+                            };
+                        }
+                        "Obstacle_Count" => {
+                            if let Some(slider) =
+                                board_control_widget.buttons.get_mut("Obstacle_Count")
+                            {
+                                if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
+                                    settings.gen_obstacles = sl.value.max(1);
+                                }
+                            };
+                        }
+                        "Weighted_Tile_Count" => {
+                            if let Some(slider) =
+                                board_control_widget.buttons.get_mut("Weighted_Tile_Count")
+                            {
+                                if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
+                                    settings.weight_count = sl.value.max(1);
+                                }
+                            };
                         }
                         "Iterations" => {
-                            if let Some(slider) = gen_control_widget.buttons.get_mut("Iterations") {
-                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
+                            if let Some(slider) = board_control_widget.buttons.get_mut("Iterations")
+                            {
+                                if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
                                     settings.iterations = sl.value.max(1) as u8;
                                 }
-                            }
+                            };
                         }
                         _ => {}
                     },
@@ -875,7 +845,7 @@ pub fn main() {
         } else if mouse_clicked_on {
             if save_file {
                 let (clicked_button, (_, inner_button_clicked)) =
-                    save_widget.on_click(mouse_position);
+                    save_widget.on_click(true, mouse_position);
                 match clicked_button {
                     Some(id) => {
                         save_widget.change_drawn(false);
@@ -932,7 +902,7 @@ pub fn main() {
                 };
             } else if select_file {
                 let (clicked_button, (_, inner_button_clicked)) =
-                    file_select_widget.on_click(mouse_position);
+                    file_select_widget.on_click(true, mouse_position);
                 match clicked_button {
                     Some(button) => {
                         //file_select_widget.change_drawn(false);
@@ -981,61 +951,13 @@ pub fn main() {
                     }
                     None => {}
                 }
-            } else if gen_menu {
-                let (clicked_button, _) = gen_control_widget.on_click(mouse_position);
-                match clicked_button {
-                    Some(name) => match name.as_str().trim() {
-                        "Weight_Range" => {
-                            if let Some(slider) =
-                                board_control_widget.buttons.get_mut("Weight_Range")
-                            {
-                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
-                                    settings.gen_weight = sl.value.max(1) as u8;
-                                }
-                            }
-                        }
-                        "Number of Obstacles" => {
-                            if let Some(slider) =
-                                board_control_widget.buttons.get_mut("Number of Obstacles")
-                            {
-                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
-                                    settings.gen_obstacles = sl.value as u16;
-                                }
-                            }
-                        }
-                        "Iterations" => {
-                            if let Some(slider) = board_control_widget.buttons.get_mut("Iterations")
-                            {
-                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
-                                    settings.iterations = sl.value.max(1) as u8;
-                                }
-                            }
-                        }
-                        "Ok_Gen" => {
-                            gen_menu = false;
-                            gen_control_widget.change_active(false);
-                            gen_control_widget.change_drawn(false);
-                            game_board.change_active(true);
-                            run_game_board = true;
-                        }
-                        _ => {}
-                    },
-                    None => {}
-                }
             } else {
                 let (clicked_button, (_, inner_button_clicked)) =
-                    board_control_widget.on_click(mouse_position);
+                    board_control_widget.on_click(true, mouse_position);
                 match clicked_button {
                     Some(name) => match name.as_str() {
                         "START" => {
-                            if settings.enable_doubling_experiment
-                                || settings.enable_dynamic_generation
-                            {
-                                game_board.change_active(false);
-                                gen_menu = true;
-                            } else {
-                                run_game_board = true;
-                            }
+                            run_game_board = true;
                         }
                         "Upload Map" => {
                             game_board.draw(&mut canvas);
@@ -1075,26 +997,12 @@ pub fn main() {
                             None => {}
                         },
                         "Gen_Grid" => {
-                            game_board.generate_random_grid(255, 300);
+                            game_board.generate_random_grid(
+                                settings.weight,
+                                settings.gen_obstacles as usize,
+                                settings.weight_count as usize,
+                            );
                             game_board.draw(&mut canvas);
-                        }
-                        "Weight_Draw" => {
-                            if let Some(slider) =
-                                board_control_widget.buttons.get_mut("Weight_Draw")
-                            {
-                                if let Some(sl) = slider.as_any().downcast_ref::<Slider>() {
-                                    settings.weight = sl.value.max(1) as u8;
-                                    match game_board.selected_piece_type {
-                                        TileType::Player => {}
-                                        TileType::Enemy => {}
-                                        TileType::Floor => {}
-                                        _ => {
-                                            game_board.selected_piece_type =
-                                                TileType::Weighted(settings.weight)
-                                        }
-                                    }
-                                }
-                            }
                         }
                         "DG_Select" => {
                             if let Some(checkbox) =
