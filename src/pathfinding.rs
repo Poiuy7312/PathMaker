@@ -211,13 +211,21 @@ impl PathfindingAlgorithm for GreedySearch {
         let mut path: Vec<(i32, i32)> = vec![];
         let mut black_list: Vec<(i32, i32)> = vec![];
         let mut steps: u32 = 0;
+        let max_steps = map.len() as u32 * 2;
 
         fn heuristic(pos: &(i32, i32), goal: &(i32, i32)) -> i32 {
             return (goal.0 as i32 - pos.0 as i32).abs() + (goal.1 as i32 - pos.1 as i32).abs();
         }
-
-        while current != goal {
+        loop {
             steps += 1;
+            if current == goal {
+                path.reverse();
+                return (path, steps);
+            }
+            if steps >= max_steps {
+                break;
+            }
+
             let mut good_moves: Vec<(i32, i32)> = vec![];
             let mut bad_moves: Vec<(i32, i32)> = vec![];
 
@@ -248,8 +256,7 @@ impl PathfindingAlgorithm for GreedySearch {
             }
         }
 
-        path.reverse();
-        return (path, steps);
+        (vec![], steps)
     }
 
     fn returns_full_path(&self) -> bool {
