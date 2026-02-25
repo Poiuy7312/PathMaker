@@ -530,6 +530,102 @@ impl Board {
         self.cached_grid.borrow_mut().replace(grid);
     }
 
+    pub fn generate_organic_city(
+        &self,
+        road_weight: u8,
+        road_min_spacing: u32,
+        road_max_spacing: u32,
+        building_density: f32, // 0.0 to 1.0
+        building_min_size: u32,
+        building_max_size: u32,
+    ) {
+        let mut grid = HashMap::new();
+        let tile_width = self.tile_width();
+        let tile_height = self.tile_height();
+        let mut rng = rand::rng();
+
+        // Initialize all as floors
+        for i in 0..self.tile_amount_x {
+            for j in 0..self.tile_amount_y {
+                let position = (i as i32, j as i32);
+                let tile_type = if self.starts.contains(&position) {
+                    TileType::Player
+                } else if self.goals.contains(&position) {
+                    TileType::Enemy
+                } else {
+                    TileType::Floor
+                };
+                grid.insert(
+                    position,
+                    Tile::new(position, tile_type, tile_height, tile_width, 255, true),
+                );
+            }
+        }
+
+        // Generate horizontal roads
+        let mut x = 0;
+        while x < self.tile_amount_x {
+            for j in 0..self.tile_amount_y {
+                let position = (x as i32, j as i32);
+                if self.starts.contains(&position) || self.goals.contains(&position) {
+                    continue;
+                }
+                if let Some(tile) = grid.get_mut(&position) {
+                    tile.change_tile_type(TileType::Floor);
+                    tile.weight = road_weight;
+                }
+            }
+            x += rng.random_range(road_min_spacing..=road_max_spacing);
+        }
+
+        // Generate vertical roads
+        let mut y = 0;
+        while y < self.tile_amount_y {
+            for i in 0..self.tile_amount_x {
+                let position = (i as i32, y as i32);
+                if self.starts.contains(&position) || self.goals.contains(&position) {
+                    continue;
+                }
+                if let Some(tile) = grid.get_mut(&position) {
+                    tile.change_tile_type(TileType::Floor);
+                    tile.weight = road_weight;
+                }
+            }
+            y += rng.random_range(road_min_spacing..=road_max_spacing);
+        }
+        // Place random rectangular buildings
+        let num_buildings =
+            ((self.tile_amount_x * self.tile_amount_y) as f32 * building_density / 100.0) as u32;
+
+        for _ in 0..num_buildings {
+            let start_x = rng.random_range(0..self.tile_amount_x as i32);
+            let start_y = rng.random_range(0..self.tile_amount_y as i32);
+            let width = rng.random_range(building_min_size..=building_max_size) as i32;
+            let height = rng.random_range(building_min_size..=building_max_size) as i32;
+
+            // Fill building area
+            for x in start_x..=(start_x + width).min(self.tile_amount_x as i32 - 1) {
+                for y in start_y..=(start_y + height).min(self.tile_amount_y as i32 - 1) {
+                    let position = (x, y);
+
+                    // Don't overwrite starts/goals
+                    if self.starts.contains(&position) || self.goals.contains(&position) {
+                        continue;
+                    }
+
+                    if let Some(tile) = grid.get_mut(&position) {
+                        if tile.weight == road_weight {
+                            continue;
+                        }
+                        tile.change_tile_type(TileType::Obstacle);
+                    }
+                }
+            }
+        }
+
+        self.cached_grid.borrow_mut().replace(grid);
+    }
+
     pub fn save_to_file(
         &self,
         filepath: &str,
@@ -618,15 +714,27 @@ impl Board {
                             if agent_clone.is_path_possible(&grid_clone) {
                                 let (_, path, wcf, memory, time, steps, path_cost) =
                                     agent_clone.get_path(&algorithm_str, &grid_clone);
-                                (
-                                    i,
-                                    Some(path),
-                                    Some(wcf),
-                                    Some(memory),
-                                    Some(time),
-                                    Some(steps),
-                                    Some(path_cost),
-                                )
+                                if !path.is_empty() {
+                                    (
+                                        i,
+                                        Some(path),
+                                        Some(wcf),
+                                        Some(memory),
+                                        Some(time),
+                                        Some(steps),
+                                        Some(path_cost),
+                                    )
+                                } else {
+                                    (
+                                        i,
+                                        None,
+                                        Some(wcf),
+                                        Some(memory),
+                                        Some(time),
+                                        Some(steps),
+                                        None,
+                                    )
+                                }
                             } else {
                                 (i, None, None, None, None, None, None)
                             }
@@ -641,12 +749,20 @@ impl Board {
                         {
                             if path.is_none() {
                                 // If any path is not possible, regenerate
-                                valid_iteration = false;
-                                if !doubling || !dyn_gen {
-                                    println!("No possible Path");
-                                    return;
+                                if steps.is_none() {
+                                    valid_iteration = false;
+                                    if !doubling || !dyn_gen {
+                                        println!("No possible Path");
+                                        return;
+                                    }
+                                } else {
+                                    if !doubling || !dyn_gen {
+                                        println!("Path is possible but algorithm couldn't find a solution in a reasonable amount of time");
+                                        return;
+                                    }
+                                    println!("Path is possible but algorithm couldn't find a solution in a reasonable amount of time");
+                                    break;
                                 }
-                                break;
                             } else {
                                 // Update agent
                                 self.agents[index].path = path.unwrap();
