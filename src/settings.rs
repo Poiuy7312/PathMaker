@@ -3,6 +3,12 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Generation_Mode {
+    Random,
+    City,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameSettings {
     // Display settings
     pub window_width: u32,
@@ -25,6 +31,7 @@ pub struct GameSettings {
     pub weight_count: u32,
     pub iterations: u8,
     pub save_file: String,
+    pub gen_mode: Generation_Mode,
 
     // File settings
     pub last_opened_file: Option<String>,
@@ -35,22 +42,23 @@ pub struct GameSettings {
 impl Default for GameSettings {
     fn default() -> Self {
         GameSettings {
-            window_width: 1000,
-            window_height: 800,
+            window_width: 1500,
+            window_height: 1024,
             fullscreen: false,
             enable_dynamic_generation: false,
             enable_doubling_experiment: false,
             enable_multiple_agents: false,
             enable_multiple_goals: false,
             selected_algorithm: String::from("Greedy"),
-            board_width: 800,
-            board_height: 800,
-            tiles_x: 40,
-            tiles_y: 40,
+            board_width: 1024,
+            board_height: 1024,
+            tiles_x: 512,
+            tiles_y: 512,
             last_opened_file: None,
             last_save_directory: String::from("/home"),
             auto_save_enabled: false,
             save_file: "test".to_string(),
+            gen_mode: Generation_Mode::Random,
             weight: 1,
             gen_obstacles: 0,
             weight_count: 0,

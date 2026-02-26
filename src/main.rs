@@ -54,12 +54,18 @@ pub fn main() {
     let sdl_context = sdl2::init().unwrap();
 
     let video_subsystem = sdl_context.video().unwrap();
+    //let display_mode = video_subsystem.current_display_mode(0).unwrap();
+    //let window_width = display_mode.w as u32;
+    //let window_height = display_mode.h as u32;
     video_subsystem.text_input().stop();
     let mut window = video_subsystem
         .window("PathMaker demo", window_width, window_height)
         .position_centered()
         .build()
         .expect("Failed to render Window");
+    //window
+    //  .set_fullscreen(sdl2::video::FullscreenType::True)
+    //   .unwrap();
     let icon_path = fs::canonicalize("src/assets/Icon.svg").expect("Path does not exist");
     let font_path = fs::canonicalize("src/assets/open-sans/OpenSans-Semibold.ttf")
         .expect("Path does not exist");
@@ -90,6 +96,37 @@ pub fn main() {
     let directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>> = Rc::new(
         RefCell::new(util::get_dir_map(&directory_tree, window_width)),
     );
+
+    let generation_mode_selector: Box<dyn Interface> = {
+        Box::new(Dropdown {
+            height: 30,
+            width: controls_width,
+            location: Point::new(0, 0),
+            text_color: WHITE,
+            background_color: PRIMARY_COLOR,
+            hover: RefCell::new(false),
+            text: "Random Generation".to_string(),
+            id: "Gen_Mode_Selector".to_string(),
+            active: false,
+            clicked_on: false,
+            options: RefCell::from(vec![StandardButton {
+                height: 0,
+                width: 0,
+                location: Point::new(0, 0),
+                text_color: WHITE,
+                background_color: PRIMARY_COLOR,
+                hover: RefCell::new(false),
+                text: "City Generation".to_string(),
+                id: "City Generation".to_string(),
+                filter: None,
+                active: false,
+                drawn: RefCell::new(false),
+                cached_texture: None,
+            }]),
+            filter: None,
+            drawn: RefCell::new(false),
+        })
+    };
 
     let path_selector: Box<dyn Interface> = {
         Box::new(Dropdown {
@@ -454,6 +491,7 @@ pub fn main() {
         vec!["Obstacle_Count"],
         vec!["Weighted_Tile_Count"],
         vec!["Iterations"],
+        vec!["Gen_Mode_Selector"],
         vec!["Gen_Grid"],
         vec!["DG_Select"],
         vec!["DE_Select"],
@@ -491,6 +529,7 @@ pub fn main() {
         ("MA_Select", MA_Check),
         ("MG_Select", MG_Check),
         ("Path_Selector", path_selector),
+        ("Gen_Mode_Selector", generation_mode_selector),
         ("Piece_Select", piece_select),
         ("Weight_Draw", weight_draw_value),
         ("Obstacle_Count", obstacle_count),
@@ -997,11 +1036,18 @@ pub fn main() {
                             None => {}
                         },
                         "Gen_Grid" => {
-                            game_board.generate_random_grid(
-                                settings.weight,
-                                settings.gen_obstacles as usize,
-                                settings.weight_count as usize,
-                            );
+                            match settings.gen_mode {
+                                settings::Generation_Mode::Random => {
+                                    game_board.generate_random_grid(
+                                        settings.weight,
+                                        settings.gen_obstacles as usize,
+                                        settings.weight_count as usize,
+                                    );
+                                }
+                                settings::Generation_Mode::City => {
+                                    game_board.generate_organic_city(5, 3, 15, 4.0, 2, 5);
+                                }
+                            }
                             game_board.draw(&mut canvas);
                         }
                         "DG_Select" => {
@@ -1048,6 +1094,23 @@ pub fn main() {
                             {
                                 if let Some(dd) = dropdown.as_any().downcast_ref::<Dropdown>() {
                                     settings.selected_algorithm = dd.text.clone();
+                                }
+                            }
+                        }
+                        "Gen_Mode_Selector" => {
+                            if let Some(dropdown) =
+                                board_control_widget.buttons.get_mut("Gen_Mode_Selector")
+                            {
+                                if let Some(dd) = dropdown.as_any().downcast_ref::<Dropdown>() {
+                                    match dd.text.as_str() {
+                                        "City Generation" => {
+                                            settings.gen_mode = settings::Generation_Mode::City;
+                                        }
+                                        "Random Generation" => {
+                                            settings.gen_mode = settings::Generation_Mode::Random;
+                                        }
+                                        _ => {}
+                                    }
                                 }
                             }
                         }
