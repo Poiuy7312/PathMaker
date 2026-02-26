@@ -98,6 +98,9 @@ impl Interface for InputBox {
     fn dirty_parent(&self) -> bool {
         false
     }
+    fn important_component_clicked(&self) -> bool {
+        false
+    }
 
     fn after_click(&self) -> bool {
         true

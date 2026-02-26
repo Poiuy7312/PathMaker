@@ -44,12 +44,18 @@ impl Widget {
             if after {
                 println!("Yellow");
                 self.change_drawn(false);
-                for (_, button) in self.buttons.iter_mut().filter(|(_, b)| b.dirty_parent()) {
+                for (_, button) in self
+                    .buttons
+                    .iter_mut()
+                    .filter(|(_, b)| b.important_component_clicked())
+                {
                     let result = button.on_click(mouse_state);
                     if result.0 {
                         self.important_component_clicked = false;
                         let button_id = button.get_id();
                         return (Some(button_id), result);
+                    } else {
+                        return (None, (false, None));
                     }
                 }
             } else {
@@ -314,7 +320,7 @@ impl Widget {
             for id in button_ids {
                 if let Some(a) = self.buttons.get_mut(id) {
                     if self.important_component_clicked {
-                        if a.dirty_parent() {
+                        if a.important_component_clicked() {
                             a.change_active(true);
                         } else {
                             a.change_active(false);
@@ -331,7 +337,7 @@ impl Widget {
             for id in &button_ids {
                 if let Some(a) = self.buttons.get_mut(id) {
                     if self.important_component_clicked {
-                        if a.dirty_parent() {
+                        if a.important_component_clicked() {
                             a.change_active(true);
                         } else {
                             a.change_active(false);

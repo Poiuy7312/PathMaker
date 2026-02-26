@@ -24,6 +24,7 @@ pub trait Interface: Component {
     fn has_indent(&self) -> bool;
     fn draw_priority(&self) -> u8;
     fn dirty_parent(&self) -> bool;
+    fn important_component_clicked(&self) -> bool;
     fn deactivate_parent(&self) -> bool;
     fn after_click(&self) -> bool;
     fn draw<'a>(
@@ -134,6 +135,9 @@ impl Interface for StandardButton {
         1
     }
     fn dirty_parent(&self) -> bool {
+        false
+    }
+    fn important_component_clicked(&self) -> bool {
         false
     }
 
@@ -415,6 +419,9 @@ impl Interface for Dropdown {
 
     fn dirty_parent(&self) -> bool {
         true
+    }
+    fn important_component_clicked(&self) -> bool {
+        self.clicked_on
     }
 
     fn deactivate_parent(&self) -> bool {
@@ -741,6 +748,9 @@ impl Interface for OptionButton {
     fn dirty_parent(&self) -> bool {
         false
     }
+    fn important_component_clicked(&self) -> bool {
+        false
+    }
 
     fn after_click(&self) -> bool {
         true
@@ -919,6 +929,10 @@ impl Interface for CheckBox {
         1
     }
     fn dirty_parent(&self) -> bool {
+        false
+    }
+
+    fn important_component_clicked(&self) -> bool {
         false
     }
 
@@ -1147,6 +1161,9 @@ impl Interface for Slider {
     }
 
     fn dirty_parent(&self) -> bool {
+        false
+    }
+    fn important_component_clicked(&self) -> bool {
         false
     }
 

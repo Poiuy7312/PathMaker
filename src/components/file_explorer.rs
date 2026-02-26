@@ -54,6 +54,10 @@ impl Interface for FileExplorer {
         true
     }
 
+    fn important_component_clicked(&self) -> bool {
+        false
+    }
+
     fn deactivate_parent(&self) -> bool {
         false
     }
