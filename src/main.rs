@@ -41,7 +41,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{env, fs, thread};
 
 /// Global allocator using jemalloc for improved memory allocation performance
@@ -808,7 +808,10 @@ pub fn main() {
     game_board.draw(&mut canvas);
     let (mut window_width, mut window_height) =
         canvas.output_size().expect("Unable to obtain window size");
+    const TARGET_FRAME_DURATION: Duration = Duration::from_nanos(1_000_000_000 / 60);
+
     'running: loop {
+        let frame_start = Instant::now();
         let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
         let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
         /*-------- User UI -------- */
@@ -865,6 +868,7 @@ pub fn main() {
         if save_file {
             board_control_widget.change_active(false);
             board_control_widget.change_drawn(false);
+            save_widget.change_active(true);
             let result = save_widget.get_result();
             if let Some(save_display) = save_widget.buttons.get_mut("Display") {
                 if let Some(display) = save_display.as_any().downcast_mut::<InputBox>() {
@@ -875,9 +879,7 @@ pub fn main() {
                 }
             }
 
-            if util::mouse_over(save_widget.get_rect(), mouse_position) {
-                save_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
-            }
+            save_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
         } else if select_file {
             /*------- File Selection Menu -------*/
             board_control_widget.change_active(false);
@@ -914,7 +916,7 @@ pub fn main() {
         } else {
             file_select_widget.change_drawn(false);
             file_select_widget.change_active(false);
-            save_widget.change_active(false);
+            save_widget.change_drawn(false);
             save_widget.change_active(false);
             /*------ Board Editing Components ------*/
 
@@ -1011,6 +1013,8 @@ pub fn main() {
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
                                 game_board.change_active(true);
+                                canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                canvas.clear();
                                 game_board.draw(&mut canvas);
                             }
                             "Save_Wid_Save" => {
@@ -1026,6 +1030,8 @@ pub fn main() {
                                 save_file = false;
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
+                                canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                canvas.clear();
                                 game_board.change_active(true);
                                 game_board.draw(&mut canvas);
                             }
@@ -1118,12 +1124,6 @@ pub fn main() {
                             save_file = true;
                             game_board.change_active(false);
                             save_widget.change_active(true);
-                            save_widget.draw(
-                                &mut canvas,
-                                &texture_creator,
-                                mouse_position,
-                                &mut font,
-                            );
                         }
                         "Piece_Select" => match inner_button_clicked {
                             Some(value) => match value.as_str() {
@@ -1427,5 +1427,11 @@ pub fn main() {
         //let obs_y: u32 = rand::thread_rng().gen_range(0..tiles_y);
         //let obs_x: u32 = rand::thread_rng().gen_range(0..tiles_x);
         /*-------- Updates values for board Generation -------- */
+
+        // Cap at ~60 FPS
+        let elapsed = frame_start.elapsed();
+        if elapsed < TARGET_FRAME_DURATION {
+            thread::sleep(TARGET_FRAME_DURATION - elapsed);
+        }
     }
 }
