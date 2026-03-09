@@ -2,6 +2,12 @@
 name = "game_ex"
 version = "0.1.0"
 edition = "2021"
+description = "PathMaker - Interactive Pathfinding Visualization"
+license = "MIT"
+
+[[bin]]
+name = "pathmaker"
+path = "src/main.rs"
 
 [dependencies]
 walkdir = "2.5.0"
@@ -13,4 +19,4 @@ jemalloc-ctl = "0.5.4"
 [dependencies.sdl2]
 version = "0.38.0"
 default-features = false
-features = ["ttf","gfx","image"] 
+features = ["ttf","image", "static-link", "use-pkgconfig"]

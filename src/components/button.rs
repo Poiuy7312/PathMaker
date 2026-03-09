@@ -1,3 +1,17 @@
+//! # Button Components Module
+//!
+//! This module provides various button and interactive UI components:
+//!
+//! ## Components
+//! - **StandardButton**: Basic clickable button with text
+//! - **Dropdown**: Expandable menu with selectable options
+//! - **OptionButton**: Radio-button style selector with multiple options
+//! - **CheckBox**: Toggle button with check mark
+//! - **Slider**: Horizontal or vertical value slider
+//!
+//! All components implement the `Interface` trait for consistent rendering
+//! and interaction handling.
+
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -18,15 +32,44 @@ use crate::util;
 
 use sdl2::ttf;
 
+/// Extended interface trait for renderable UI components.
+///
+/// Builds on the Component trait with additional methods for:
+/// - Rendering with fonts and textures
+/// - Layout and sizing behavior
+/// - Draw state management
 pub trait Interface: Component {
+    /// Get the bounding rectangle at a specific position.
     fn get_rect(&self, point: Point) -> Rect;
+
+    /// Returns true if the component should not be resized by layouts.
     fn is_static(&self) -> bool;
+
+    /// Returns true if the component should have indentation in layouts.
     fn has_indent(&self) -> bool;
+
+    /// Priority for rendering order (higher = rendered later/on top).
     fn draw_priority(&self) -> u8;
+
+    /// Returns true if clicking this component should mark parent as dirty.
     fn dirty_parent(&self) -> bool;
+
+    /// Returns true if this component blocks other components when clicked.
     fn important_component_clicked(&self) -> bool;
+
+    /// Returns true if clicking should deactivate other components.
     fn deactivate_parent(&self) -> bool;
+
+    /// Returns true if click should be processed after mouse release.
     fn after_click(&self) -> bool;
+
+    /// Render the component to the canvas.
+    ///
+    /// # Arguments
+    /// * `canvas` - SDL2 canvas to draw on
+    /// * `texture_creator` - For creating text textures
+    /// * `mouse_position` - Current mouse position for hover effects
+    /// * `font` - Font for text rendering
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
@@ -34,37 +77,76 @@ pub trait Interface: Component {
         mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     );
+
+    /// Change the component's display text/label.
+    fn change_label(&mut self, new_text: String);
+
+    /// Get a mutable reference to the component as Any for downcasting.
     fn as_any(&mut self) -> &mut dyn Any;
+
+    /// Set whether the component has been drawn this frame.
     fn change_drawn(&self, new_val: bool);
+
+    /// Check if the component has already been drawn this frame.
     fn is_drawn(&self) -> bool;
 }
 
+/// Trait for components that can be used as dropdown menu options.
+///
+/// Extends Interface with filtering and layout capabilities.
 pub trait ValidDropdownOption: Interface {
+    /// Check if this option matches the current filter text.
     fn contains(&self, text: Option<&str>) -> bool;
+
+    /// Position and size the component within a dropdown.
+    ///
+    /// # Returns
+    /// Number of layout slots consumed (for variable-height options)
     fn layout(&mut self, origin: Point, width: u32, height: u32) -> u32;
+
+    /// Set the filter text for this option.
     fn set_filter(&mut self, text: Option<&str>);
 }
 
+/// Style configuration for button components.
+///
+/// Stores colors that define a button's appearance.
 #[derive(Clone)]
-/// Stores Color values to style buttons
 pub struct InterfaceStyle {
+    /// Color for text rendering
     pub text_color: Color,
+    /// Background fill color
     pub background_color: Color,
 }
 
-/// Struct for simple button can only be a rectangle
+/// A simple clickable button with text.
+///
+/// Renders as a rectangle with centered text. Supports hover effects
+/// and optional filtering for use in dropdowns.
 pub struct StandardButton {
+    /// Height in pixels
     pub height: u32,
+    /// Width in pixels
     pub width: u32,
+    /// Screen position
     pub location: Point,
+    /// Text color
     pub text_color: Color,
+    /// Background color
     pub background_color: Color,
+    /// Hover state (RefCell for interior mutability)
     pub hover: RefCell<bool>,
+    /// Display text
     pub text: String,
+    /// Unique identifier
     pub id: String,
+    /// Optional filter text for dropdown matching
     pub filter: Option<String>,
+    /// Whether the button is interactive
     pub active: bool,
+    /// Draw state flag
     pub drawn: RefCell<bool>,
+    /// Cached texture for text (optimization)
     pub cached_texture: Option<Texture<'static>>,
 }
 
@@ -159,6 +241,10 @@ impl Interface for StandardButton {
             return true;
         }
         return false;
+    }
+
+    fn change_label(&mut self, new_text: String) {
+        self.text = new_text
     }
 
     fn draw<'a>(
@@ -291,21 +377,36 @@ impl StandardButton {
     }
 }
 
-/// Creates a dropdown menu.
-
+/// A expandable dropdown menu with selectable options.
+///
+/// When clicked, expands to show a list of StandardButton options.
+/// Selecting an option swaps its text with the dropdown's display text.
 pub struct Dropdown {
+    /// Height in pixels
     pub height: u32,
+    /// Width in pixels
     pub width: u32,
+    /// Screen position
     pub location: Point,
+    /// Text color
     pub text_color: Color,
+    /// Background color
     pub background_color: Color,
+    /// Hover state
     pub hover: RefCell<bool>,
+    /// Currently displayed text (selected option)
     pub text: String,
+    /// Unique identifier
     pub id: String,
+    /// Whether the dropdown is interactive
     pub active: bool,
+    /// Whether the dropdown is currently expanded
     pub clicked_on: bool,
+    /// List of selectable options
     pub options: RefCell<Vec<StandardButton>>,
+    /// Optional filter for searching options
     pub filter: Option<String>,
+    /// Draw state flag
     pub drawn: RefCell<bool>,
 }
 
@@ -442,6 +543,10 @@ impl Interface for Dropdown {
             return true;
         }
         return false;
+    }
+
+    fn change_label(&mut self, new_text: String) {
+        self.text = new_text
     }
 
     fn draw<'a>(
@@ -645,15 +750,28 @@ impl Dropdown {
     }
 }
 
+/// A radio-button style selector with multiple exclusive options.
+///
+/// Displays all options as adjacent buttons. Clicking one deselects others
+/// and highlights the selected option.
 pub struct OptionButton {
+    /// Height in pixels
     pub height: u32,
+    /// Width in pixels
     pub width: u32,
+    /// Screen position
     pub location: Point,
+    /// Unique identifier
     pub id: String,
+    /// Whether the component is interactive
     pub active: bool,
+    /// Option buttons with their labels
     pub options: RefCell<Vec<(String, StandardButton)>>,
+    /// Currently selected option ID
     active_option: Option<String>,
+    /// Default styles for each option (for deselected state)
     defaults: HashMap<String, InterfaceStyle>,
+    /// Draw state flag
     pub drawn: RefCell<bool>,
 }
 
@@ -723,9 +841,27 @@ impl Component for OptionButton {
 
     fn change_width(&mut self, new_width: u32) {
         self.width = new_width;
+        let button_width = self.width as usize / self.options.borrow().len();
+        self.options
+            .borrow_mut()
+            .iter_mut()
+            .enumerate()
+            .for_each(|(count, button)| {
+                button.1.location = Point::new(
+                    self.location.x() + (count * button_width) as i32,
+                    self.location.y(),
+                );
+                button.1.change_width(button_width as u32);
+            });
     }
     fn change_height(&mut self, new_height: u32) {
         self.height = new_height;
+        self.options
+            .borrow_mut()
+            .iter_mut()
+            .for_each(|(_, button)| {
+                button.change_height(new_height);
+            })
     }
 }
 
@@ -735,7 +871,7 @@ impl Interface for OptionButton {
     }
 
     fn is_static(&self) -> bool {
-        true
+        false
     }
     fn has_indent(&self) -> bool {
         false
@@ -778,6 +914,10 @@ impl Interface for OptionButton {
         return false;
     }
 
+    fn change_label(&mut self, _: String) {
+        return;
+    }
+
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
@@ -813,8 +953,9 @@ impl OptionButton {
         option_values: Vec<(String, InterfaceStyle)>,
         drawn: bool,
     ) -> Self {
-        let mut options: Vec<(String, StandardButton)> = Vec::new();
-        let mut defaults: HashMap<String, InterfaceStyle> = HashMap::new();
+        let size = option_values.len();
+        let mut options: Vec<(String, StandardButton)> = Vec::with_capacity(size);
+        let mut defaults: HashMap<String, InterfaceStyle> = HashMap::with_capacity(size);
         let mut count: i32 = 0;
         let button_width = width / option_values.len() as u32;
         option_values.iter().for_each(|(text, style)| {
@@ -852,14 +993,26 @@ impl OptionButton {
     }
 }
 
+/// A toggle checkbox with label.
+///
+/// Renders as a small square checkbox with text label.
+/// Clicking toggles the checked state.
 pub struct CheckBox {
+    /// Display label text
     pub label: String,
+    /// Current checked state
     pub checked: bool,
+    /// Screen position
     pub location: Point,
+    /// Height in pixels
     pub height: u32,
+    /// Width in pixels
     pub width: u32,
+    /// Unique identifier
     pub id: String,
+    /// Whether the checkbox is interactive
     pub active: bool,
+    /// Draw state flag
     pub drawn: RefCell<bool>,
 }
 
@@ -949,6 +1102,10 @@ impl Interface for CheckBox {
     }
     fn has_indent(&self) -> bool {
         false
+    }
+
+    fn change_label(&mut self, new_text: String) {
+        self.label = new_text
     }
 
     fn draw<'a>(
@@ -1053,21 +1210,40 @@ impl CheckBox {
     }
 }
 
+/// A draggable value slider.
+///
+/// Can be horizontal or vertical. Supports both full (with label)
+/// and minimal (thumb-only) rendering modes.
 pub struct Slider {
+    /// Height in pixels
     pub height: u32,
+    /// Width in pixels
     pub width: u32,
+    /// Screen position
     pub location: Point,
+    /// Label text color
     pub text_color: Color,
+    /// Track background color
     pub background_color: Color,
+    /// Label text
     pub text: String,
+    /// Unique identifier
     pub id: String,
+    /// Whether the slider is interactive
     pub active: bool,
+    /// Maximum value of the slider
     pub range: u32,
+    /// Current value
     pub value: u32,
+    /// Position of the slider thumb along its axis
     pub slider_offset_axis: i32,
+    /// Draw state flag
     pub drawn: RefCell<bool>,
+    /// Cached texture for text (optimization)
     pub cached_texture: Option<Texture<'static>>,
+    /// True for vertical slider, false for horizontal
     pub is_vertical: bool,
+    /// True for minimal rendering (thumb only, no label)
     pub minimal: bool,
 }
 
@@ -1258,6 +1434,10 @@ impl Interface for Slider {
             return true;
         }
         return false;
+    }
+
+    fn change_label(&mut self, new_text: String) {
+        self.text = new_text
     }
 
     fn has_indent(&self) -> bool {

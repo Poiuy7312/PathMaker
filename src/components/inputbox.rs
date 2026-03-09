@@ -1,3 +1,8 @@
+//! # Input Box Module
+//!
+//! This module provides a text input field component for user text entry.
+//! Supports placeholder text and visual feedback when focused.
+
 use std::any::Any;
 use std::cell::RefCell;
 
@@ -13,17 +18,32 @@ use crate::components::Component;
 use crate::util;
 use sdl2::ttf;
 
+/// A text input field with placeholder support.
+///
+/// Displays either the entered text or placeholder text (dimmed).
+/// Shows a cursor when clicked/focused.
 pub struct InputBox {
+    /// Placeholder text shown when empty
     pub default_text: String,
+    /// Currently entered text
     pub text: String,
+    /// Whether the component is interactive
     pub active: bool,
+    /// Text color
     pub text_color: Color,
+    /// Background color
     pub background_color: Color,
+    /// Whether the input is currently focused
     pub clicked_on: bool,
+    /// Height in pixels
     pub height: u32,
+    /// Width in pixels
     pub width: u32,
+    /// Unique identifier
     pub id: String,
+    /// Screen position
     pub location: Point,
+    /// Draw state flag
     pub drawn: RefCell<bool>,
 }
 
@@ -129,6 +149,10 @@ impl Interface for InputBox {
         return false;
     }
 
+    fn change_label(&mut self, new_text: String) {
+        self.default_text = new_text
+    }
+
     fn draw<'a>(
         &self,
         canvas: &mut Canvas<Window>,
@@ -212,10 +236,12 @@ impl Interface for InputBox {
 }
 
 impl InputBox {
+    /// Update the current text content.
     pub fn change_text(&mut self, new_text: String) {
         self.text = new_text;
     }
 
+    /// Check if the input box is currently focused.
     pub fn clicked_on(&self) -> bool {
         self.clicked_on
     }

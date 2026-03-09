@@ -1,6 +1,16 @@
+//! # File Explorer Module
+//!
+//! This module provides a file system browser component for navigating
+//! directories and selecting files. Used for save/load dialogs.
+//!
+//! ## Features
+//! - Directory tree navigation
+//! - Scrollable list with slider
+//! - Optional directory-only filtering
+//! - Search/filter support
+
 extern crate sdl2;
 use sdl2::event::Event;
-use sdl2::gfx;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
@@ -19,19 +29,36 @@ use crate::components::{board::*, button::*, inputbox::*, Component};
 use crate::fileDialog::DirectoryNode;
 use crate::{colors::*, fileDialog};
 
+/// A file system browser component with scrollable directory listing.
+///
+/// Displays entries from a directory tree structure, allowing navigation
+/// between directories and selection of files.
 pub struct FileExplorer {
+    /// Screen position
     pub location: Point,
+    /// Unique identifier
     pub id: String,
+    /// Height in pixels
     pub height: u32,
+    /// Width in pixels
     pub width: u32,
+    /// Home/root directory path
     pub default_dir: String,
+    /// Shared reference to the directory tree data
     pub directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>>,
+    /// Currently displayed directory path
     pub current_display: String,
+    /// Optional search/filter text
     pub filter: Option<String>,
+    /// If true, only show directories (not files)
     pub filter_dir: bool,
+    /// Whether the component is interactive
     pub active: bool,
+    /// Draw state flag
     pub drawn: RefCell<bool>,
+    /// Vertical scroll slider
     pub scroll_slider: RefCell<Slider>,
+    /// Cached list of visible button IDs
     pub cached_button_list: RefCell<Option<Vec<String>>>,
 }
 impl Interface for FileExplorer {
@@ -87,6 +114,10 @@ impl Interface for FileExplorer {
             return true;
         }
         return false;
+    }
+
+    fn change_label(&mut self, _: String) {
+        return;
     }
 
     fn draw<'a>(
@@ -297,6 +328,7 @@ impl Component for FileExplorer {
 }
 
 impl FileExplorer {
+    /// Get buttons for the currently displayed directory.
     fn get_cur_buttons(&self) -> Vec<String> {
         if let Some(current_buttons) = self.directories.borrow_mut().get_mut(&self.current_display)
         {
@@ -304,6 +336,10 @@ impl FileExplorer {
         }
         vec![]
     }
+
+    /// Navigate to a different directory.
+    ///
+    /// Resets scroll position and clears button cache.
     pub fn change_display(&mut self, new_display: String) {
         if self.current_display != new_display {
             for button in self.get_cur_buttons() {
@@ -320,6 +356,10 @@ impl FileExplorer {
         }
     }
 
+    /// Set a new filter for searching.
+    ///
+    /// # Returns
+    /// True if the filter changed
     pub fn change_filter(&mut self, new_filter: Option<String>) -> bool {
         if self.filter != new_filter {
             self.filter = new_filter;

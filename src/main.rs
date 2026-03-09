@@ -1,13 +1,35 @@
+//! # PathMaker - Interactive Pathfinding Visualization Application
+//!
+//! This is the main entry point for the PathMaker application, a graphical tool
+//! for visualizing and benchmarking various pathfinding algorithms on customizable grids.
+//!
+//! ## Features
+//! - Interactive grid-based board for placing obstacles, weighted tiles, and agents
+//! - Multiple pathfinding algorithms: Greedy Search, BFS, A*, and JPS with Weights (JPSW)
+//! - Map generation modes: Random and City-style procedural generation
+//! - File save/load functionality for persisting board configurations
+//! - Performance benchmarking with memory and timing metrics
+//!
+//! ## Architecture
+//! The application uses SDL2 for rendering and event handling, with a component-based
+//! UI system built on top of it. The main loop processes user input, updates the UI,
+//! and renders the board and control widgets.
+
 extern crate sdl2;
+
+// Memory allocation and statistics tracking
 use jemalloc_ctl::{epoch, stats};
+
+// SDL2 imports for graphics, events, and text rendering
 use sdl2::event::Event;
-use sdl2::gfx;
 use sdl2::image::LoadSurface;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
 use sdl2::surface::Surface;
 use sdl2::ttf;
+
+// Standard library imports for data structures and concurrency
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -16,28 +38,75 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{env, fs, thread};
 
+/// Global allocator using jemalloc for improved memory allocation performance
+/// and accurate memory usage tracking during pathfinding benchmarks.
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-// mod button;
+// Application modules
+/// Benchmarking utilities for measuring pathfinding performance
 mod benchmarks;
+/// Color constants used throughout the UI
 mod colors;
-
+/// UI component system (buttons, widgets, board, etc.)
 mod components;
-
+/// File dialog utilities for loading and saving maps
 mod fileDialog;
-
+/// Pathfinding algorithms implementation (Greedy, BFS, A*, JPSW)
 mod pathfinding;
+/// Application settings and configuration persistence
 mod settings;
+/// Utility functions for UI calculations and file operations
 mod util;
 
-use crate::benchmarks::sobel_method;
 use crate::colors::*;
+
+// Embed assets directly into the binary so it works when installed anywhere
+const FONT_BYTES: &[u8] = include_bytes!("assets/open-sans/OpenSans-Semibold.ttf");
+const ICON_BYTES: &[u8] = include_bytes!("assets/Icon.svg");
+
+/// Returns the application data directory (~/.local/share/game_ex/) and
+/// ensures embedded assets are extracted there.
+fn ensure_assets() -> PathBuf {
+    let home = env::var("HOME").expect("HOME environment variable not set");
+    let data_dir = PathBuf::from(home).join(".local/share/game_ex");
+    let font_dir = data_dir.join("fonts");
+
+    fs::create_dir_all(&font_dir).expect("Failed to create data directory");
+
+    let font_path = font_dir.join("OpenSans-Semibold.ttf");
+    if !font_path.exists() {
+        fs::write(&font_path, FONT_BYTES).expect("Failed to write font file");
+    }
+
+    let icon_path = data_dir.join("Icon.svg");
+    if !icon_path.exists() {
+        fs::write(&icon_path, ICON_BYTES).expect("Failed to write icon file");
+    }
+
+    data_dir
+}
 
 use crate::components::file_explorer::FileExplorer;
 use crate::components::{board::*, button::*, inputbox::*, widget::*, Component};
 use crate::settings::GameSettings;
 
+/// Main entry point for the PathMaker application.
+///
+/// This function initializes the SDL2 context, loads application settings,
+/// creates the game board and UI widgets, and runs the main event loop.
+///
+/// # Event Loop
+/// The main loop handles:
+/// - Mouse input for interacting with the board and UI components
+/// - Keyboard input for text entry (file names, search)
+/// - Window resize events for responsive layout
+/// - Pathfinding execution and visualization
+///
+/// # UI Components
+/// - **Board Control Widget**: Contains buttons for algorithm selection, generation options, etc.
+/// - **File Select Widget**: File browser for loading saved maps
+/// - **Save Widget**: File browser with name input for saving maps
 pub fn main() {
     // Load settings at startup
     let settings_path = GameSettings::get_default_path();
@@ -66,10 +135,10 @@ pub fn main() {
     //window
     //  .set_fullscreen(sdl2::video::FullscreenType::True)
     //   .unwrap();
-    let icon_path = fs::canonicalize("src/assets/Icon.svg").expect("Path does not exist");
-    let font_path = fs::canonicalize("src/assets/open-sans/OpenSans-Semibold.ttf")
-        .expect("Path does not exist");
-    let window_icon = Surface::from_file(icon_path).unwrap();
+    let data_dir = ensure_assets();
+    let icon_path = data_dir.join("Icon.svg");
+    let font_path = data_dir.join("fonts/OpenSans-Semibold.ttf");
+    let window_icon = Surface::from_file(&icon_path).unwrap();
     window.set_icon(window_icon);
     let mut canvas = window.into_canvas().build().unwrap();
 
@@ -77,6 +146,7 @@ pub fn main() {
     let directory_tree = fileDialog::get_file_tree();
     let mut select_file: bool = false; // Check if select file widget is active
     let mut save_file: bool = false; // Check if save file widget is active
+    let mut change_gen_sliders = false;
 
     let ttf_context: ttf::Sdl2TtfContext = ttf::init().unwrap();
 
@@ -87,6 +157,7 @@ pub fn main() {
     /*----- File Explorer Components ----- */
 
     let mut mouse_clicked_on: bool = false;
+    let mut replacement_labels: Vec<&str> = Vec::with_capacity(3);
 
     let controls_width = window_width * 1 / 5;
 
@@ -213,10 +284,10 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: BLACK,
         background_color: SECONDARY_COLOR,
-        text: "Obstacle Count".to_string(),
+        text: "Obstacle Percentage".to_string(),
         id: "Obstacle_Count".to_string(),
         active: false,
-        range: tiles_x * tiles_y,
+        range: 100,
         slider_offset_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
@@ -231,10 +302,10 @@ pub fn main() {
         location: Point::new(0, 0),
         text_color: BLACK,
         background_color: SECONDARY_COLOR,
-        text: "Weighted Count".to_string(),
+        text: "Weighted Percentage".to_string(),
         id: "Weighted_Tile_Count".to_string(),
         active: false,
-        range: tiles_x * tiles_y,
+        range: 100,
         slider_offset_axis: 0,
         drawn: RefCell::new(false),
         cached_texture: None,
@@ -243,7 +314,7 @@ pub fn main() {
         minimal: false,
     });
 
-    let DG_Check: Box<dyn Interface> = Box::new(CheckBox {
+    let dg_check: Box<dyn Interface> = Box::new(CheckBox {
         label: "Dynamic Generation".to_string(),
         checked: false,
         location: Point::new(40, 40),
@@ -254,7 +325,7 @@ pub fn main() {
         drawn: RefCell::new(false),
     });
 
-    let DE_Check: Box<dyn Interface> = Box::new(CheckBox {
+    let de_check: Box<dyn Interface> = Box::new(CheckBox {
         label: "Doubling Experiment".to_string(),
         checked: false,
         location: Point::new(40, 40),
@@ -265,7 +336,7 @@ pub fn main() {
         drawn: RefCell::new(false),
     });
 
-    let MA_Check: Box<dyn Interface> = Box::new(CheckBox {
+    let ma_check: Box<dyn Interface> = Box::new(CheckBox {
         label: "Multiple Agents".to_string(),
         checked: false,
         location: Point::new(40, 40),
@@ -276,13 +347,24 @@ pub fn main() {
         width: 0,
     });
 
-    let MG_Check: Box<dyn Interface> = Box::new(CheckBox {
+    let mg_check: Box<dyn Interface> = Box::new(CheckBox {
         label: "Multiple Goals".to_string(),
         checked: false,
         location: Point::new(40, 40),
         height: 0,
         width: 0,
         id: "MG_Select".to_string(),
+        active: true,
+        drawn: RefCell::new(false),
+    });
+
+    let ra_check: Box<dyn Interface> = Box::new(CheckBox {
+        label: "Random Agents & Goals".to_string(),
+        checked: false,
+        location: Point::new(40, 40),
+        height: 0,
+        width: 0,
+        id: "RA_Select".to_string(),
         active: true,
         drawn: RefCell::new(false),
     });
@@ -497,6 +579,7 @@ pub fn main() {
         vec!["DE_Select"],
         vec!["MA_Select"],
         vec!["MG_Select"],
+        vec!["RA_Select"],
         vec!["START"],
         vec!["START"],
     ];
@@ -524,10 +607,11 @@ pub fn main() {
         ("Upload Map", upload_map_button),
         ("Save Map", save_map_button),
         ("START", start_board_button),
-        ("DG_Select", DG_Check),
-        ("DE_Select", DE_Check),
-        ("MA_Select", MA_Check),
-        ("MG_Select", MG_Check),
+        ("DG_Select", dg_check),
+        ("DE_Select", de_check),
+        ("MA_Select", ma_check),
+        ("MG_Select", mg_check),
+        ("RA_Select", ra_check),
         ("Path_Selector", path_selector),
         ("Gen_Mode_Selector", generation_mode_selector),
         ("Piece_Select", piece_select),
@@ -743,15 +827,18 @@ pub fn main() {
         }
 
         if run_game_board {
-            game_board.update_board(
+            game_board.run_board(
                 &mut canvas,
                 &settings.selected_algorithm,
                 settings.enable_doubling_experiment,
                 settings.enable_dynamic_generation,
+                settings.enable_random_agents,
                 settings.gen_obstacles,
                 settings.weight_count,
                 settings.iterations,
                 settings.weight.max(1),
+                settings.gen_mode,
+                false,
             );
             run_game_board = false;
         }
@@ -816,6 +903,12 @@ pub fn main() {
             board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
 
             board_control_widget.change_active(true);
+            if change_gen_sliders {
+                board_control_widget.change_labels(
+                    vec!["Weight_Draw", "Obstacle_Count", "Weighted_Tile_Count"],
+                    &replacement_labels,
+                );
+            }
         }
         /*------ Board Editing Components ------*/
 
@@ -872,7 +965,7 @@ pub fn main() {
                             if let Some(slider) = board_control_widget.buttons.get_mut("Iterations")
                             {
                                 if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
-                                    settings.iterations = sl.value.max(1) as u8;
+                                    settings.iterations = sl.value.max(1) as usize;
                                 }
                             };
                         }
@@ -1036,16 +1129,26 @@ pub fn main() {
                             None => {}
                         },
                         "Gen_Grid" => {
+                            println!("{}", settings.enable_random_agents);
                             match settings.gen_mode {
-                                settings::Generation_Mode::Random => {
+                                settings::GenerationMode::Random => {
                                     game_board.generate_random_grid(
                                         settings.weight,
                                         settings.gen_obstacles as usize,
                                         settings.weight_count as usize,
+                                        settings.enable_random_agents,
                                     );
                                 }
-                                settings::Generation_Mode::City => {
-                                    game_board.generate_organic_city(5, 3, 15, 4.0, 2, 5);
+                                settings::GenerationMode::City => {
+                                    game_board.generate_organic_city(
+                                        0,
+                                        2,
+                                        settings.weight.max(2).into(),
+                                        settings.gen_obstacles as f32,
+                                        2,
+                                        settings.weight_count.max(2),
+                                        settings.enable_random_agents,
+                                    );
                                 }
                             }
                             game_board.draw(&mut canvas);
@@ -1088,6 +1191,15 @@ pub fn main() {
                                 }
                             }
                         }
+                        "RA_Select" => {
+                            if let Some(checkbox) =
+                                board_control_widget.buttons.get_mut("RA_Select")
+                            {
+                                if let Some(cb) = checkbox.as_any().downcast_ref::<CheckBox>() {
+                                    settings.enable_random_agents = cb.checked;
+                                }
+                            }
+                        }
                         "Path_Selector" => {
                             if let Some(dropdown) =
                                 board_control_widget.buttons.get_mut("Path_Selector")
@@ -1104,10 +1216,22 @@ pub fn main() {
                                 if let Some(dd) = dropdown.as_any().downcast_ref::<Dropdown>() {
                                     match dd.text.as_str() {
                                         "City Generation" => {
-                                            settings.gen_mode = settings::Generation_Mode::City;
+                                            settings.gen_mode = settings::GenerationMode::City;
+                                            change_gen_sliders = true;
+                                            replacement_labels = vec![
+                                                "Road Spacing Range",
+                                                "Building Percentage",
+                                                "Building Size Range",
+                                            ];
                                         }
                                         "Random Generation" => {
-                                            settings.gen_mode = settings::Generation_Mode::Random;
+                                            settings.gen_mode = settings::GenerationMode::Random;
+                                            change_gen_sliders = true;
+                                            replacement_labels = vec![
+                                                "Weight Value",
+                                                "Obstacle Percentage",
+                                                "Weighted Percentage",
+                                            ];
                                         }
                                         _ => {}
                                     }

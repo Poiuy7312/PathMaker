@@ -1,3 +1,20 @@
+//! # Widget Module
+//!
+//! This module provides the Widget component, a container for organizing
+//! multiple Interface components in a grid layout.
+//!
+//! ## Layout System
+//! Widgets use a 2D grid layout specified as a vector of rows, where each row
+//! contains component IDs. Components spanning multiple cells are automatically
+//! resized to fill their allocated space.
+//!
+//! ## Example Layout
+//! ```text
+//! [["button1", "button2"],
+//!  ["dropdown", "dropdown"],  // dropdown spans 2 columns
+//!  ["slider", "slider"]]
+//! ```
+
 extern crate sdl2;
 
 use sdl2::rect::{Point, Rect};
@@ -12,26 +29,51 @@ use crate::components::file_explorer::FileExplorer;
 use crate::components::inputbox::InputBox;
 use crate::components::{button::*, Component};
 
-/// Add static variant so widget doesn't directly change size of components
 use crate::colors::*;
 
-/// Struct for combining multiple Interface components and formatting them
+/// A container widget that arranges Interface components in a grid layout.
+///
+/// Widgets manage the positioning, sizing, and rendering of child components.
+/// They also handle click event delegation and draw state caching.
 pub struct Widget {
+    /// Screen position of the widget's top-left corner
     pub location: Point,
+    /// Unique identifier
     pub id: String,
+    /// Result value (used for file dialogs to store selected path)
     pub result: Option<String>,
+    /// Total height in pixels
     pub height: u32,
+    /// Total width in pixels
     pub width: u32,
+    /// Whether the widget is active and interactive
     pub active: bool,
+    /// Map of component IDs to Interface implementations
     pub buttons: HashMap<&'static str, Box<dyn Interface>>,
+    /// Grid layout specification (rows of component IDs)
     pub layout: Vec<Vec<&'static str>>,
+    /// Whether the widget background has been drawn
     pub drawn: bool,
+    /// Flag indicating a modal component is blocking input
     pub important_component_clicked: bool,
+    /// Cached mapping of grid positions to component IDs
     pub cached_interface_location: Option<HashMap<(i32, i32), &'static str>>,
+    /// Cached rendering order based on draw priority
     pub cached_draw_order: Option<Vec<&'static str>>,
 }
 
 impl Widget {
+    /// Handle a click event on the widget.
+    ///
+    /// Delegates the click to the appropriate child component based on
+    /// mouse position and cached layout information.
+    ///
+    /// # Arguments
+    /// * `after` - True if this is a mouse-up event, false for mouse-down
+    /// * `mouse_state` - Position of the mouse click
+    ///
+    /// # Returns
+    /// Tuple of (clicked component ID, (was clicked, inner result))
     pub fn on_click(
         &mut self,
         after: bool,
@@ -154,10 +196,12 @@ impl Widget {
         return result;
     }
 
+    /// Get the widget's unique identifier.
     fn get_id(&self) -> String {
         self.id.to_string()
     }
 
+    /// Update the draw state of the widget and all children.
     pub fn change_drawn(&mut self, new_val: bool) {
         if self.drawn != new_val {
             self.drawn = new_val;
@@ -167,19 +211,23 @@ impl Widget {
         }
     }
 
+    /// Placeholder for widget result computation.
     pub fn widget_result(&mut self) {}
 
+    /// Update the widget's screen position.
     pub fn change_location(&mut self, new_location: Point) {
         self.location = new_location;
     }
 
+    /// Set a new result value.
     pub fn change_result(&mut self, new_result: Option<String>) {
         self.result = new_result
     }
 
+    /// Activate or deactivate the widget and all children.
     pub fn change_active(&mut self, new_value: bool) {
         if self.active == new_value {
-            return; // Skip if no change
+            return;
         }
         self.active = new_value;
 
@@ -188,43 +236,66 @@ impl Widget {
             .for_each(|(_, a)| a.change_active(new_value));
     }
 
+    /// Get the current result value.
     pub fn get_result(&self) -> Option<String> {
         self.result.clone()
     }
 
+    /// Check if the widget is active.
     pub fn is_active(&self) -> bool {
         return self.active;
     }
 
+    /// Get the current screen position.
     pub fn get_location(&self) -> Point {
         return self.location;
     }
 
+    /// Set the widget width.
     pub fn change_width(&mut self, new_width: u32) {
         self.width = new_width;
     }
 
+    /// Get the current width.
     pub fn get_width(&self) -> u32 {
         self.width
     }
 
+    /// Get the current height.
     fn get_height(&self) -> u32 {
         self.height
     }
 
+    /// Set the widget height.
     pub fn change_height(&mut self, new_height: u32) {
         self.height = new_height;
     }
 
+    /// Clear the cached draw order (forces recalculation).
     fn invalidate_draw_cache(&mut self) {
         self.cached_draw_order = None;
     }
 
+    /// Check if mouse is over the widget.
     fn mouse_over_component(&self, mouse_position: Point) -> bool {
         let component: Rect = self.get_rect();
         return component.contains_point(mouse_position) && self.active;
     }
 
+    /// Update labels of multiple components.
+    ///
+    /// # Arguments
+    /// * `components` - IDs of components to update
+    /// * `replacement_labels` - New labels (parallel array)
+    pub fn change_labels(&mut self, components: Vec<&str>, replacement_labels: &Vec<&str>) {
+        for (i, component) in components.into_iter().enumerate() {
+            if let Some(button) = self.buttons.get_mut(component) {
+                button.change_label(replacement_labels[i].to_string());
+            }
+        }
+    }
+
+    /// Get the bounding rectangle of the widget.
     pub fn get_rect(&self) -> Rect {
         Rect::new(
             self.location.x(),
@@ -234,6 +305,7 @@ impl Widget {
         )
     }
 
+    /// Delegate a click to a specific component by ID.
     fn get_options_on_click(
         &mut self,
         id: String,
@@ -244,11 +316,18 @@ impl Widget {
         }
         return (false, None);
     }
+
+    /// Calculate positions and sizes for all child components.
+    ///
+    /// Uses the layout grid to determine component placement.
+    /// Components spanning multiple cells are sized accordingly.
     fn set_widget_layout(&mut self) {
         let rows = self.layout.len();
         let cols = self.layout[0].len();
-        let mut found_components: HashMap<&str, (usize, usize)> = HashMap::new();
-        let mut components_locations: HashMap<(i32, i32), &'static str> = HashMap::new();
+        let size = self.buttons.len();
+        let mut found_components: HashMap<&str, (usize, usize)> = HashMap::with_capacity(size);
+        let mut components_locations: HashMap<(i32, i32), &'static str> =
+            HashMap::with_capacity(size);
         let cell_width = self.width / cols as u32;
         let cell_height = self.height / rows as u32;
 
@@ -298,6 +377,10 @@ impl Widget {
         }
         self.cached_interface_location = Some(components_locations);
     }
+    /// Draw the widget and all child components.
+    ///
+    /// First draws the widget background, then iterates through children
+    /// in priority order. Uses caching for efficient redrawing.
     pub fn draw<'a>(
         &mut self,
         canvas: &mut Canvas<Window>,

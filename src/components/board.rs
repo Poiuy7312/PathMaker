@@ -1,3 +1,18 @@
+//! # Board Component Module
+//!
+//! This module implements the main game board for pathfinding visualization.
+//! The board is a grid of tiles that can be:
+//! - Floor tiles (traversable with optional weight)
+//! - Obstacle tiles (impassable)
+//! - Player tiles (start positions)
+//! - Enemy tiles (goal positions)
+//!
+//! ## Features
+//! - Click-to-place tile editing
+//! - Random and city-style map generation
+//! - Pathfinding execution with multi-threaded agent support
+//! - JSON serialization for save/load functionality
+
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -6,8 +21,9 @@ use std::{fmt, fs, thread, u8};
 
 extern crate sdl2;
 
+use rand::seq::index::sample;
 use rand::seq::IteratorRandom;
-use rand::Rng;
+use rand::{rng, Rng};
 use sdl2::mouse::MouseState;
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
@@ -21,25 +37,44 @@ use serde_json::{self, json};
 use crate::benchmarks::PathData;
 use crate::components::Component;
 use crate::pathfinding::Agent;
-use crate::{colors::*, fileDialog};
+use crate::{colors::*, fileDialog, settings};
 
-#[derive(Copy, Clone, PartialEq, Deserialize, Serialize)]
+/// Enumeration of possible tile types on the game board.
+///
+/// Each type has different behavior for pathfinding and rendering.
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub enum TileType {
+    /// Impassable obstacle - blocks all movement
     Obstacle,
+    /// Standard floor tile with weight 1
     Floor,
+    /// Player/agent starting position (rendered green)
     Player,
+    /// Enemy/goal position (rendered red)
     Enemy,
+    /// Floor tile with custom traversal weight (higher = slower)
     Weighted(u8),
 }
 
+/// Represents a single tile on the game board.
+///
+/// Tiles maintain their position, type, dimensions, and rendering state.
+/// The `dirty` flag is used for efficient redrawing - only dirty tiles are redrawn.
 #[derive(Copy, Clone)]
 pub struct Tile {
+    /// Position on the grid (tile coordinates, not pixels)
     pub position: (i32, i32),
+    /// Current type of this tile (obstacle, floor, player, etc.)
     tile_type: TileType,
+    /// Height in pixels when rendered
     height: u32,
+    /// Width in pixels when rendered
     width: u32,
+    /// Traversal weight (1 = normal, higher = slower)
     pub weight: u8,
+    /// Whether this tile needs to be redrawn
     dirty: bool,
+    /// Cached rectangle for efficient rendering
     cached_rectangle: Option<Rect>,
 }
 impl Serialize for Tile {
@@ -59,7 +94,16 @@ impl Serialize for Tile {
 }
 
 impl Tile {
-    fn new(
+    /// Create a new tile with the specified properties.
+    ///
+    /// # Arguments
+    /// * `position` - Grid position (will be converted to pixel position)
+    /// * `tile_type` - Type of tile
+    /// * `height` - Tile height in pixels
+    /// * `width` - Tile width in pixels
+    /// * `weight` - Traversal weight
+    /// * `dirty` - Initial dirty state
+    pub(crate) fn new(
         position: (i32, i32),
         tile_type: TileType,
         height: u32,
@@ -67,6 +111,7 @@ impl Tile {
         weight: u8,
         dirty: bool,
     ) -> Self {
+        // Convert grid position to pixel position
         let position = (position.0 * width as i32, position.1 * height as i32);
         Tile {
             position,
@@ -78,6 +123,8 @@ impl Tile {
             weight,
         }
     }
+
+    /// Calculate the screen rectangle for this tile.
     fn get_rect(&self, board_origin: Point) -> Rect {
         Rect::new(
             board_origin.x() + self.position.0,
@@ -86,6 +133,15 @@ impl Tile {
             self.height,
         )
     }
+
+    /// Draw this tile to the canvas.
+    ///
+    /// Only redraws if the tile is dirty or layout has changed.
+    /// Colors tiles based on type:
+    /// - Obstacle: Black
+    /// - Floor: White (tinted based on weight if weighted)
+    /// - Player: Green
+    /// - Enemy: Red
     fn draw(&mut self, change_layout: bool, board_origin: Point, canvas: &mut Canvas<Window>) {
         if change_layout {
             self.cached_rectangle = None;
@@ -132,13 +188,19 @@ impl Tile {
         }
     }
 
+    /// Check if this tile can be walked through.
+    ///
+    /// All non-obstacle tiles are traversable (floor, player, enemy, weighted).
     pub fn is_traversable(&self) -> bool {
         return self.tile_type != TileType::Obstacle;
     }
+
+    /// Check if this tile is a standard floor tile.
     pub fn is_floor(&self) -> bool {
         return self.tile_type == TileType::Floor;
     }
 
+    /// Change the tile's type and mark it as dirty for redraw.
     fn change_tile_type(&mut self, new_type: TileType) {
         if self.tile_type != new_type {
             self.tile_type = new_type;
@@ -147,24 +209,46 @@ impl Tile {
     }
 }
 
+/// The main game board for pathfinding visualization.
+///
+/// Contains a grid of tiles and manages agent pathfinding.
+/// Supports serialization for save/load functionality.
 pub struct Board {
+    /// Screen position of the board's top-left corner
     pub location: Point,
+    /// Total height in pixels
     pub height: u32,
+    /// Total width in pixels
     pub width: u32,
+    /// Number of tiles horizontally
     pub tile_amount_x: u32,
+    /// Number of tiles vertically
     pub tile_amount_y: u32,
+    /// Currently selected tile type for editing
     pub selected_piece_type: TileType,
+    /// Unique identifier
     pub id: String,
+    /// List of player/agent starting positions
     pub starts: Vec<(i32, i32)>,
+    /// List of goal positions
     pub goals: Vec<(i32, i32)>,
+    /// Whether the board is interactive
     pub active: bool,
+    /// Allow multiple agents simultaneously
     pub multiple_agents: bool,
+    /// Allow multiple goal positions
     pub multiple_goals: bool,
+    /// Active pathfinding agents
     pub agents: Vec<Agent>,
+    /// Cached background rectangle
     pub cached_background: Option<Rect>,
+    /// Cached tile grid (RefCell for interior mutability)
     pub cached_grid: RefCell<Option<HashMap<(i32, i32), Tile>>>,
 }
 
+/// Deserialize a Board from JSON.
+///
+/// Reconstructs the grid from the serialized tile data.
 impl<'de> Deserialize<'de> for Board {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -236,6 +320,9 @@ impl<'de> Deserialize<'de> for Board {
     }
 }
 
+/// Serialize the Board to JSON.
+///
+/// Converts the grid to a compact format suitable for storage.
 impl Serialize for Board {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -266,8 +353,14 @@ impl Serialize for Board {
     }
 }
 
+/// Component trait implementation for Board.
+///
+/// Provides standard UI interaction methods for the game board.
 impl Component for Board {
-    /// Specify functionality for when the board is clicked on
+    /// Handle a mouse click on the board.
+    ///
+    /// Calculates which tile was clicked and updates it based on
+    /// the currently selected piece type.
     fn on_click(&mut self, mouse_point: Point) -> (bool, Option<String>) {
         let rect = self.get_rect();
         self.cached_background = Some(rect);
@@ -399,61 +492,113 @@ impl Component for Board {
 }
 
 impl Board {
+    /// Load a board from a JSON string.
+    ///
+    /// # Arguments
+    /// * `board_json` - JSON string containing serialized board data
+    ///
+    /// # Returns
+    /// A new Board instance with the loaded data
     pub fn load_board_file(&mut self, board_json: String) -> Self {
         let result: Board = serde_json::from_str(&board_json).expect("yes");
         return result;
     }
-    /// Get grid information of board and set TileType
+
+    /// Get or create the tile grid.
+    ///
+    /// If no grid exists in cache, creates a new grid with all floor tiles.
     pub fn grid(&self) -> HashMap<(i32, i32), Tile> {
         if let Some(map) = self.cached_grid.borrow().as_ref() {
             return map.clone(); // Only clone if needed
         }
-        let mut grid = HashMap::new();
+        let size: usize = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let mut grid = HashMap::with_capacity(size);
         let tile_width = self.tile_width();
         let tile_height = self.tile_height();
-        for i in 0..self.tile_amount_x {
-            for j in 0..self.tile_amount_y {
-                let position: (i32, i32) = (i as i32, j as i32);
-                let num: u8 = 1; //rand::rng().random_range(0..=255);
-                grid.insert(
+        for tile in 0..=size {
+            let x = (tile as u32 % self.tile_amount_x) as usize;
+            let y = (tile as u32 / self.tile_amount_y) as usize;
+            let position: (i32, i32) = (x as i32, y as i32);
+            let num: u8 = 1; //rand::rng().random_range(0..=255);
+            grid.insert(
+                position,
+                Tile::new(
                     position,
-                    Tile::new(
-                        position,
-                        TileType::Floor,
-                        tile_height,
-                        tile_width,
-                        num,
-                        true,
-                    ),
-                );
-            }
+                    TileType::Floor,
+                    tile_height,
+                    tile_width,
+                    num,
+                    true,
+                ),
+            );
         }
         grid
     }
 
-    /// Get the width of the tiles to be generated
+    /// Get the width of each tile in pixels.
     pub fn tile_width(&self) -> u32 {
         self.width / self.tile_amount_x
     }
-    /// Get the height of the tiles to be generated
+
+    /// Get the height of each tile in pixels.
     pub fn tile_height(&self) -> u32 {
         self.height / self.tile_amount_y
     }
 
+    fn get_random_agents(&mut self) {
+        let size = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let amount = self.starts.len().max(1) * 2;
+        println!("{}", amount);
+        self.starts.clear();
+        self.goals.clear();
+        println!("{}", amount);
+        let mut rng = rand::rng();
+        let locations = sample(&mut rng, size, amount).into_vec();
+        let (starts, goals) = locations.split_at(locations.len() / 2);
+        for (i, start) in starts.iter().enumerate() {
+            println!("Yellow");
+            let s_loc = (
+                (start / self.tile_amount_x as usize) as i32,
+                (start % self.tile_amount_y as usize) as i32,
+            );
+            let g_loc = (
+                (goals[i] / self.tile_amount_x as usize) as i32,
+                (goals[i] % self.tile_amount_y as usize) as i32,
+            );
+            self.starts.push(s_loc);
+            self.goals.push(g_loc);
+        }
+    }
+
+    /// Generate a random grid with obstacles and weighted tiles.
+    ///
+    /// # Arguments
+    /// * `weight_range` - Maximum weight value for weighted tiles
+    /// * `obstacle_percentage` - Percentage of tiles that will be obstacles
+    /// * `weighted_percentage` - Percentage of tiles that will be weighted
     pub fn generate_random_grid(
-        &self,
+        &mut self,
         weight_range: u8,
-        obstacle_number: usize,
-        weighted_number: usize,
+        obstacle_percentage: usize,
+        weighted_percentage: usize,
+        random_agents: bool,
     ) {
-        let mut grid = HashMap::new();
+        if random_agents {
+            println!("Yes");
+            self.get_random_agents();
+        }
+        println!("{:#?}", self.starts);
+        println!("{:#?}", self.goals);
+        let size = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let mut grid: HashMap<(i32, i32), Tile> = HashMap::with_capacity(size);
         let tile_width = self.tile_width();
         let tile_height = self.tile_height();
         let mut rng = rand::rng();
-        let obstacle_number = obstacle_number.min(
-            (self.tile_amount_x * self.tile_amount_y / (2 * self.starts.len().max(1) as u32))
-                as usize,
-        );
+        let tile_amount = self.tile_amount_x * self.tile_amount_y;
+        let weighted_number = (tile_amount as f32 * (weighted_percentage as f32 / 100.0)) as usize;
+        let obstacle_number = (tile_amount / (2 * self.starts.len().max(1) as u32))
+            .min((tile_amount as f32 * (obstacle_percentage as f32 / 100.0)) as u32)
+            as usize;
         for i in 0..self.tile_amount_x {
             for j in 0..self.tile_amount_y {
                 let position: (i32, i32) = (i as i32, j as i32);
@@ -530,39 +675,43 @@ impl Board {
         self.cached_grid.borrow_mut().replace(grid);
     }
 
+    /// Generate a city-style grid with roads and buildings.
+    ///
+    /// Creates a grid with:
+    /// - Grid of roads at random intervals
+    /// - Rectangular buildings placed in non-road areas
+    /// - Roads have lower weights for faster traversal
+    ///
+    /// # Arguments
+    /// * `road_weight` - Weight value for road tiles (lower = faster)
+    /// * `road_min_spacing` - Minimum tiles between roads
+    /// * `road_max_spacing` - Maximum tiles between roads
+    /// * `building_density` - Percentage of area covered by buildings (0-100)
+    /// * `building_min_size` - Minimum building dimension
+    /// * `building_max_size` - Maximum building dimension
     pub fn generate_organic_city(
-        &self,
+        &mut self,
         road_weight: u8,
         road_min_spacing: u32,
         road_max_spacing: u32,
         building_density: f32, // 0.0 to 1.0
         building_min_size: u32,
         building_max_size: u32,
+        random_agents: bool,
     ) {
-        let mut grid = HashMap::new();
+        if random_agents {
+            self.get_random_agents();
+        }
+        let size = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let mut grid: HashMap<(i32, i32), Tile> = HashMap::with_capacity(size);
         let tile_width = self.tile_width();
         let tile_height = self.tile_height();
         let mut rng = rand::rng();
+        let mut grid_allocation: Vec<u8> = vec![0; size];
+        // road = 1
+        // floor = 0
+        // obstacle = 2
 
-        // Initialize all as floors
-        for i in 0..self.tile_amount_x {
-            for j in 0..self.tile_amount_y {
-                let position = (i as i32, j as i32);
-                let tile_type = if self.starts.contains(&position) {
-                    TileType::Player
-                } else if self.goals.contains(&position) {
-                    TileType::Enemy
-                } else {
-                    TileType::Floor
-                };
-                grid.insert(
-                    position,
-                    Tile::new(position, tile_type, tile_height, tile_width, 255, true),
-                );
-            }
-        }
-
-        // Generate horizontal roads
         let mut x = 0;
         while x < self.tile_amount_x {
             for j in 0..self.tile_amount_y {
@@ -570,10 +719,8 @@ impl Board {
                 if self.starts.contains(&position) || self.goals.contains(&position) {
                     continue;
                 }
-                if let Some(tile) = grid.get_mut(&position) {
-                    tile.change_tile_type(TileType::Floor);
-                    tile.weight = road_weight;
-                }
+                let idx = (x as usize) + (j as usize) * self.tile_amount_x as usize;
+                grid_allocation[idx] = 1;
             }
             x += rng.random_range(road_min_spacing..=road_max_spacing);
         }
@@ -586,16 +733,16 @@ impl Board {
                 if self.starts.contains(&position) || self.goals.contains(&position) {
                     continue;
                 }
-                if let Some(tile) = grid.get_mut(&position) {
-                    tile.change_tile_type(TileType::Floor);
-                    tile.weight = road_weight;
-                }
+                let idx = (i as usize) + (y as usize) * self.tile_amount_x as usize;
+                grid_allocation[idx] = 1;
             }
             y += rng.random_range(road_min_spacing..=road_max_spacing);
         }
-        // Place random rectangular buildings
+
+        let average_building_size = (building_min_size + building_max_size) as f32;
+
         let num_buildings =
-            ((self.tile_amount_x * self.tile_amount_y) as f32 * building_density / 100.0) as u32;
+            ((size as f32 / average_building_size) * (building_density / 100.0)) as u32;
 
         for _ in 0..num_buildings {
             let start_x = rng.random_range(0..self.tile_amount_x as i32);
@@ -603,40 +750,79 @@ impl Board {
             let width = rng.random_range(building_min_size..=building_max_size) as i32;
             let height = rng.random_range(building_min_size..=building_max_size) as i32;
 
-            // Fill building area
             for x in start_x..=(start_x + width).min(self.tile_amount_x as i32 - 1) {
                 for y in start_y..=(start_y + height).min(self.tile_amount_y as i32 - 1) {
                     let position = (x, y);
-
-                    // Don't overwrite starts/goals
                     if self.starts.contains(&position) || self.goals.contains(&position) {
                         continue;
                     }
-
-                    if let Some(tile) = grid.get_mut(&position) {
-                        if tile.weight == road_weight {
-                            continue;
-                        }
-                        tile.change_tile_type(TileType::Obstacle);
+                    let idx = (x as usize) + (y as usize) * self.tile_amount_x as usize;
+                    if grid_allocation[idx] == 0 {
+                        grid_allocation[idx] = 2;
                     }
                 }
             }
         }
 
+        // Initialize all as floors
+        for i in 0..self.tile_amount_x {
+            for j in 0..self.tile_amount_y {
+                let position = (i as i32, j as i32);
+                let idx = (i as usize) + (j as usize) * self.tile_amount_x as usize;
+                let tile_type = if self.starts.contains(&position) {
+                    TileType::Player
+                } else if self.goals.contains(&position) {
+                    TileType::Enemy
+                } else if grid_allocation[idx] == 2 {
+                    TileType::Obstacle
+                } else {
+                    TileType::Floor
+                };
+                if grid_allocation[idx] == 1 {
+                    grid.insert(
+                        position,
+                        Tile::new(
+                            position,
+                            tile_type,
+                            tile_height,
+                            tile_width,
+                            road_weight,
+                            true,
+                        ),
+                    );
+                } else {
+                    grid.insert(
+                        position,
+                        Tile::new(position, tile_type, tile_height, tile_width, 255, true),
+                    );
+                }
+            }
+        }
+
+        // Generate horizontal roads
+        // Place random rectangular buildings
+
         self.cached_grid.borrow_mut().replace(grid);
     }
 
+    /// Save the board to a JSON file.
+    ///
+    /// # Arguments
+    /// * `filepath` - Directory to save in
+    /// * `file_name` - Name of the file (without extension)
     pub fn save_to_file(
         &self,
         filepath: &str,
         file_name: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(&self)?;
-        //println!("{}", json);
         fs::write(filepath.to_owned() + "/" + file_name.trim() + ".json", json)?;
         Ok(())
     }
 
+    /// Create pathfinding agents from start/goal positions.
+    ///
+    /// Each start position is paired with the corresponding goal position.
     fn create_agents(&mut self) {
         if self.starts.len() != self.goals.len() {
             println!("Not all agents have a corresponding goal");
@@ -652,9 +838,10 @@ impl Board {
         }
     }
 
-    fn create_data_map(&self) -> HashMap<usize, PathData> {
-        let mut data_map: HashMap<usize, PathData> = HashMap::new();
-        for (i, _) in self.agents.iter().enumerate() {
+    /// Initialize a data map for collecting benchmark metrics per agent.
+    fn create_data_map(&self, amount: usize) -> HashMap<usize, PathData> {
+        let mut data_map: HashMap<usize, PathData> = HashMap::with_capacity(amount);
+        for i in 0..amount {
             data_map.insert(
                 i,
                 PathData {
@@ -669,31 +856,71 @@ impl Board {
         return data_map;
     }
 
-    pub fn update_board(
+    /// Run pathfinding and animate agents moving to their goals.
+    ///
+    /// This is the main function for executing pathfinding experiments.
+    /// It supports:
+    /// - Multiple iterations with optional grid regeneration
+    /// - Doubling experiment (doubles obstacles each iteration)
+    /// - Multi-threaded pathfinding for multiple agents
+    /// - Real-time visualization of agent movement
+    ///
+    /// # Arguments
+    /// * `canvas` - SDL2 canvas for rendering
+    /// * `algorithm` - Name of the pathfinding algorithm to use
+    /// * `doubling` - If true, double obstacles each iteration
+    /// * `dyn_gen` - If true, regenerate grid each iteration
+    /// * `obstacles` - Initial obstacle percentage
+    /// * `weighted_tiles` - Weighted tile percentage
+    /// * `iterations` - Number of iterations to run
+    /// * `weight_range` - Maximum tile weight
+    /// * `gen_mode` - Generation mode (Random or City)
+    pub fn run_board(
         &mut self,
         canvas: &mut Canvas<Window>,
         algorithm: &str,
         doubling: bool,
         dyn_gen: bool,
+        random_agents: bool,
         obstacles: u32,
         weighted_tiles: u32,
-        iterations: u8,
+        iterations: usize,
         weight_range: u8,
+        gen_mode: settings::GenerationMode,
+        display_last_run: bool,
     ) {
-        if self.agents.is_empty() {
-            self.create_agents();
+        if !random_agents {
+            if self.agents.is_empty() {
+                self.create_agents();
+            }
         }
+        let mut data_map: HashMap<usize, PathData> = self.create_data_map(iterations);
         let mut obstacles = obstacles as usize;
-        let mut data_map: HashMap<usize, PathData> = self.create_data_map();
         for i in 0..iterations {
             let mut valid_iteration = false;
             while !valid_iteration {
                 if doubling || dyn_gen {
-                    self.generate_random_grid(
-                        weight_range.min(255),
-                        obstacles as usize,
-                        weighted_tiles as usize,
-                    );
+                    match gen_mode {
+                        settings::GenerationMode::Random => {
+                            self.generate_random_grid(
+                                weight_range.min(255),
+                                obstacles as usize,
+                                weighted_tiles as usize,
+                                random_agents,
+                            );
+                        }
+                        settings::GenerationMode::City => {
+                            self.generate_organic_city(
+                                0,
+                                2,
+                                weight_range as u32,
+                                obstacles as f32,
+                                2,
+                                weighted_tiles,
+                                random_agents,
+                            );
+                        }
+                    }
                 }
                 if self.agents.is_empty() {
                     self.create_agents();
@@ -704,11 +931,11 @@ impl Board {
                 while agents_completed_count != self.starts.len() {
                     let mut handles = vec![];
                     // Spawn threads - each gets its own grid copy
-                    for i in 0..self.agents.len() {
+                    for agent_idx in 0..self.agents.len() {
                         let grid_clone = grid.clone(); // No Arc<Mutex>, just clone
                         let algorithm_str = algorithm.to_string();
 
-                        let mut agent_clone = self.agents[i].clone();
+                        let mut agent_clone = self.agents[agent_idx].clone();
 
                         let handle = thread::spawn(move || {
                             if agent_clone.is_path_possible(&grid_clone) {
@@ -716,7 +943,7 @@ impl Board {
                                     agent_clone.get_path(&algorithm_str, &grid_clone);
                                 if !path.is_empty() {
                                     (
-                                        i,
+                                        agent_idx,
                                         Some(path),
                                         Some(wcf),
                                         Some(memory),
@@ -726,7 +953,7 @@ impl Board {
                                     )
                                 } else {
                                     (
-                                        i,
+                                        agent_idx,
                                         None,
                                         Some(wcf),
                                         Some(memory),
@@ -736,7 +963,7 @@ impl Board {
                                     )
                                 }
                             } else {
-                                (i, None, None, None, None, None, None)
+                                (agent_idx, None, None, None, None, None, None)
                             }
                         });
                         handles.push(handle);
@@ -766,8 +993,8 @@ impl Board {
                             } else {
                                 // Update agent
                                 self.agents[index].path = path.unwrap();
-                                if let Some(agent_index) = data_map.get_mut(&index) {
-                                    agent_index.update_all(
+                                if let Some(iteration_data) = data_map.get_mut(&i) {
+                                    iteration_data.update_all(
                                         wcf.unwrap_or_default(),
                                         memory.unwrap_or_default(),
                                         time.unwrap_or_default(),
@@ -790,7 +1017,7 @@ impl Board {
                     self.draw(canvas);
                 }
             }
-            if i == iterations - 1 {
+            if i == iterations - 1 && display_last_run {
                 // Mark all tiles as dirty so they redraw on last iteration
                 let mut display_shown = false;
                 while !display_shown {
@@ -823,11 +1050,6 @@ impl Board {
                     thread::sleep(Duration::from_millis(16));
                 }
 
-                for (_, data) in &data_map {
-                    println!("{}", format!("{}", data));
-                }
-                fileDialog::save_data(&data_map);
-
                 let mut grid = self.grid();
                 self.agents.iter_mut().for_each(|agent| {
                     let current = agent.position;
@@ -854,8 +1076,13 @@ impl Board {
             self.agents.clear();
             println!("{}", i);
         }
+        for (_, data) in &data_map {
+            println!("{}", format!("{}", data));
+        }
+        fileDialog::save_data(&data_map);
     }
 
+    /// Get the bounding rectangle of the board.
     fn get_rect(&self) -> Rect {
         if self.cached_background.is_none() {
             Rect::new(
@@ -868,7 +1095,11 @@ impl Board {
             self.cached_background.expect("No background")
         }
     }
-    /// Draw Function for board
+
+    /// Draw the entire board to the canvas.
+    ///
+    /// Iterates through all tiles and draws dirty tiles.
+    /// Updates the cached grid after drawing.
     pub fn draw<'a>(&self, canvas: &mut Canvas<Window>) {
         if self.cached_background.is_none() {
             canvas.set_draw_color(WHITE);
@@ -880,5 +1111,326 @@ impl Board {
             tile.draw(self.cached_background.is_none(), self.location, canvas);
         }
         self.cached_grid.borrow_mut().replace(grid);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    /// Helper: create a small Board for testing
+    fn make_test_board(tiles_x: u32, tiles_y: u32) -> Board {
+        Board {
+            location: Point::new(0, 0),
+            height: tiles_y * 10,
+            width: tiles_x * 10,
+            tile_amount_x: tiles_x,
+            tile_amount_y: tiles_y,
+            selected_piece_type: TileType::Floor,
+            id: "test_board".to_string(),
+            starts: vec![],
+            goals: vec![],
+            active: true,
+            multiple_agents: false,
+            multiple_goals: false,
+            agents: vec![],
+            cached_background: None,
+            cached_grid: RefCell::new(None),
+        }
+    }
+
+    // ------- Tile -------
+
+    #[test]
+    fn test_tile_new_position_is_pixel_scaled() {
+        let tile = Tile::new((3, 4), TileType::Floor, 10, 10, 1, false);
+        // Position is grid * width/height
+        assert_eq!(tile.position, (30, 40));
+    }
+
+    #[test]
+    fn test_tile_floor_is_traversable() {
+        let tile = Tile::new((0, 0), TileType::Floor, 10, 10, 1, false);
+        assert!(tile.is_traversable());
+    }
+
+    #[test]
+    fn test_tile_obstacle_is_not_traversable() {
+        let tile = Tile::new((0, 0), TileType::Obstacle, 10, 10, 1, false);
+        assert!(!tile.is_traversable());
+    }
+
+    #[test]
+    fn test_tile_player_is_traversable() {
+        let tile = Tile::new((0, 0), TileType::Player, 10, 10, 1, false);
+        assert!(tile.is_traversable());
+    }
+
+    #[test]
+    fn test_tile_enemy_is_traversable() {
+        let tile = Tile::new((0, 0), TileType::Enemy, 10, 10, 1, false);
+        assert!(tile.is_traversable());
+    }
+
+    #[test]
+    fn test_tile_weighted_is_traversable() {
+        let tile = Tile::new((0, 0), TileType::Weighted(50), 10, 10, 50, false);
+        assert!(tile.is_traversable());
+    }
+
+    #[test]
+    fn test_tile_is_floor_true() {
+        let tile = Tile::new((0, 0), TileType::Floor, 10, 10, 1, false);
+        assert!(tile.is_floor());
+    }
+
+    #[test]
+    fn test_tile_is_floor_false_for_obstacle() {
+        let tile = Tile::new((0, 0), TileType::Obstacle, 10, 10, 1, false);
+        assert!(!tile.is_floor());
+    }
+
+    #[test]
+    fn test_tile_is_floor_false_for_player() {
+        let tile = Tile::new((0, 0), TileType::Player, 10, 10, 1, false);
+        assert!(!tile.is_floor());
+    }
+
+    #[test]
+    fn test_tile_change_tile_type_marks_dirty() {
+        let mut tile = Tile::new((0, 0), TileType::Floor, 10, 10, 1, false);
+        assert!(!tile.dirty);
+        tile.change_tile_type(TileType::Obstacle);
+        assert!(tile.dirty);
+        assert!(!tile.is_traversable());
+    }
+
+    #[test]
+    fn test_tile_change_tile_type_same_type_not_dirty() {
+        let mut tile = Tile::new((0, 0), TileType::Floor, 10, 10, 1, false);
+        tile.change_tile_type(TileType::Floor);
+        assert!(!tile.dirty); // no change
+    }
+
+    #[test]
+    fn test_tile_get_rect() {
+        let tile = Tile::new((2, 3), TileType::Floor, 10, 10, 1, false);
+        let rect = tile.get_rect(Point::new(100, 200));
+        assert_eq!(rect.x(), 100 + 20); // board_origin.x + pixel position
+        assert_eq!(rect.y(), 200 + 30);
+        assert_eq!(rect.width(), 10);
+        assert_eq!(rect.height(), 10);
+    }
+
+    #[test]
+    fn test_tile_weight_default() {
+        let tile = Tile::new((0, 0), TileType::Floor, 10, 10, 1, false);
+        assert_eq!(tile.weight, 1);
+    }
+
+    #[test]
+    fn test_tile_weight_custom() {
+        let tile = Tile::new((0, 0), TileType::Weighted(42), 10, 10, 42, false);
+        assert_eq!(tile.weight, 42);
+    }
+
+    // ------- TileType -------
+
+    #[test]
+    fn test_tiletype_equality() {
+        assert_eq!(TileType::Floor, TileType::Floor);
+        assert_eq!(TileType::Obstacle, TileType::Obstacle);
+        assert_eq!(TileType::Player, TileType::Player);
+        assert_eq!(TileType::Enemy, TileType::Enemy);
+        assert_ne!(TileType::Floor, TileType::Obstacle);
+        assert_ne!(TileType::Player, TileType::Enemy);
+    }
+
+    #[test]
+    fn test_tiletype_weighted_equality() {
+        assert_eq!(TileType::Weighted(5), TileType::Weighted(5));
+        assert_ne!(TileType::Weighted(5), TileType::Weighted(10));
+    }
+
+    #[test]
+    fn test_tiletype_serialization_roundtrip() {
+        let types = vec![
+            TileType::Floor,
+            TileType::Obstacle,
+            TileType::Player,
+            TileType::Enemy,
+            TileType::Weighted(100),
+        ];
+        for tt in types {
+            let json = serde_json::to_string(&tt).unwrap();
+            let loaded: TileType = serde_json::from_str(&json).unwrap();
+            assert_eq!(tt, loaded);
+        }
+    }
+
+    // ------- Board -------
+
+    #[test]
+    fn test_board_tile_width() {
+        let board = make_test_board(40, 40);
+        assert_eq!(board.tile_width(), 10); // 400 / 40
+    }
+
+    #[test]
+    fn test_board_tile_height() {
+        let board = make_test_board(40, 40);
+        assert_eq!(board.tile_height(), 10);
+    }
+
+    #[test]
+    fn test_board_grid_creates_floor_tiles() {
+        let board = make_test_board(5, 5);
+        let grid = board.grid();
+        // Should have 5*5 = 25 tiles (plus one extra due to 0..=size)
+        assert!(grid.len() >= 25);
+        for tile in grid.values() {
+            assert!(tile.is_traversable());
+        }
+    }
+
+    #[test]
+    fn test_board_grid_is_cached() {
+        let board = make_test_board(3, 3);
+        let grid1 = board.grid();
+        let grid2 = board.grid();
+        assert_eq!(grid1.len(), grid2.len());
+    }
+
+    #[test]
+    fn test_board_get_id() {
+        let board = make_test_board(5, 5);
+        assert_eq!(board.get_id(), "test_board");
+    }
+
+    #[test]
+    fn test_board_component_active() {
+        let mut board = make_test_board(5, 5);
+        assert!(board.is_active());
+        board.change_active(false);
+        assert!(!board.is_active());
+    }
+
+    #[test]
+    fn test_board_change_location() {
+        let mut board = make_test_board(5, 5);
+        board.change_location(Point::new(100, 200));
+        assert_eq!(board.get_location(), Point::new(100, 200));
+    }
+
+    #[test]
+    fn test_board_dimensions() {
+        let mut board = make_test_board(5, 5);
+        assert_eq!(board.get_width(), 50);
+        assert_eq!(board.get_height(), 50);
+        board.change_width(200);
+        board.change_height(300);
+        assert_eq!(board.get_width(), 200);
+        assert_eq!(board.get_height(), 300);
+    }
+
+    #[test]
+    fn test_board_mouse_over_inside() {
+        let board = make_test_board(10, 10);
+        assert!(board.mouse_over_component(Point::new(50, 50)));
+    }
+
+    #[test]
+    fn test_board_mouse_over_outside() {
+        let board = make_test_board(10, 10);
+        assert!(!board.mouse_over_component(Point::new(200, 200)));
+    }
+
+    // ------- Board serialization -------
+
+    #[test]
+    fn test_board_serialize_deserialize() {
+        let board = make_test_board(5, 5);
+        let _ = board.grid(); // Initialize grid
+        let json = serde_json::to_string(&board).unwrap();
+        let loaded: Board = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.tile_amount_x, 5);
+        assert_eq!(loaded.tile_amount_y, 5);
+    }
+
+    #[test]
+    fn test_board_serialization_preserves_dimensions() {
+        let board = make_test_board(20, 15);
+        let _ = board.grid();
+        let json = serde_json::to_string(&board).unwrap();
+        let loaded: Board = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.width, 200);
+        assert_eq!(loaded.height, 150);
+        assert_eq!(loaded.tile_amount_x, 20);
+        assert_eq!(loaded.tile_amount_y, 15);
+    }
+
+    #[test]
+    fn test_board_serialization_preserves_starts_goals() {
+        let mut board = make_test_board(10, 10);
+        board.starts = vec![(0, 0), (1, 1)];
+        board.goals = vec![(9, 9), (8, 8)];
+        let _ = board.grid();
+        let json = serde_json::to_string(&board).unwrap();
+        let loaded: Board = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.starts, vec![(0, 0), (1, 1)]);
+        assert_eq!(loaded.goals, vec![(9, 9), (8, 8)]);
+    }
+
+    // ------- Board generate_random_grid -------
+
+    #[test]
+    fn test_generate_random_grid_creates_grid() {
+        let mut board = make_test_board(10, 10);
+        board.starts = vec![(0, 0)];
+        board.goals = vec![(9, 9)];
+        board.generate_random_grid(10, 20, 10, false);
+        let grid = board.grid();
+        assert!(grid.len() >= 100);
+    }
+
+    #[test]
+    fn test_generate_random_grid_has_obstacles() {
+        let mut board = make_test_board(20, 20);
+        board.starts = vec![(0, 0)];
+        board.goals = vec![(19, 19)];
+        board.generate_random_grid(5, 30, 0, false);
+        let grid = board.grid();
+        let obstacle_count = grid.values().filter(|t| !t.is_traversable()).count();
+        assert!(obstacle_count > 0);
+    }
+
+    // ------- Board create_data_map -------
+
+    #[test]
+    fn test_create_data_map() {
+        let board = make_test_board(5, 5);
+        let data_map = board.create_data_map(3);
+        assert_eq!(data_map.len(), 3);
+        for (_, pd) in &data_map {
+            assert!(pd.wcf.is_empty());
+            assert!(pd.memory.is_empty());
+        }
+    }
+
+    // ------- Board save_to_file -------
+
+    #[test]
+    fn test_save_to_file() {
+        let board = make_test_board(5, 5);
+        let _ = board.grid();
+        let dir = std::env::temp_dir();
+        let dir_str = dir.to_str().unwrap();
+        let result = board.save_to_file(dir_str, "pathmaker_test_save");
+        assert!(result.is_ok());
+        let path = dir.join("pathmaker_test_save.json");
+        assert!(path.exists());
+        let _ = std::fs::remove_file(path);
     }
 }

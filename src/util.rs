@@ -1,3 +1,11 @@
+//! # Utility Functions Module
+//!
+//! This module provides helper functions used throughout the application for:
+//! - Mouse position checking
+//! - Font size calculations
+//! - Directory tree structure management
+//! - File browser data handling
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -6,6 +14,14 @@ use sdl2::rect::{Point, Rect};
 
 use crate::{components::button::*, fileDialog};
 
+/// Check if the mouse position is within a given rectangle.
+///
+/// # Arguments
+/// * `rect` - The bounding rectangle to check against
+/// * `mouse_position` - Current mouse cursor position
+///
+/// # Returns
+/// `true` if the mouse is within the rectangle bounds
 pub fn mouse_over(rect: Rect, mouse_position: Point) -> bool {
     return rect.contains_point(mouse_position);
 }
@@ -60,6 +76,17 @@ pub fn walk_tree(
 
 */
 
+/// Calculate an appropriate font size that fits within the available width.
+///
+/// Uses a simple estimation based on average character width (8 pixels).
+/// Scales down the font size if the text would overflow.
+///
+/// # Arguments
+/// * `text_len` - Number of characters in the text
+/// * `available_width` - Maximum width available for the text in pixels
+///
+/// # Returns
+/// Calculated font size in pixels (minimum 4)
 pub fn calculate_scaled_font_size(text_len: u32, available_width: u32) -> u32 {
     let char_width = 8;
     let estimated_width = text_len * char_width;
@@ -73,6 +100,15 @@ pub fn calculate_scaled_font_size(text_len: u32, available_width: u32) -> u32 {
     .max(4) // minimum font size
 }
 
+/// Add a new file entry to the directory map data structure.
+///
+/// This function creates a new StandardButton for the file and adds it
+/// to both the flat map and its parent directory's children list.
+///
+/// # Arguments
+/// * `directories` - Shared reference to the directory map
+/// * `path` - Parent directory path
+/// * `file_name` - Name of the file (without .json extension)
 pub fn add_file_to_dir_map(
     directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>>,
     path: String,
@@ -104,6 +140,21 @@ pub fn add_file_to_dir_map(
     }
 }
 
+/// Convert a directory tree structure into a flat HashMap for efficient lookup.
+///
+/// Creates a map where:
+/// - Keys are full file/directory paths
+/// - Values are tuples of (StandardButton, Vec<child_paths>)
+///
+/// This structure allows O(1) lookup of any node and its children,
+/// which is essential for the file explorer's navigation.
+///
+/// # Arguments
+/// * `node` - Root node of the directory tree to convert
+/// * `width` - Window width (used for button positioning)
+///
+/// # Returns
+/// HashMap mapping paths to button/children pairs
 pub fn get_dir_map(
     node: &fileDialog::DirectoryNode,
     width: u32,
@@ -164,4 +215,97 @@ pub fn get_dir_map(
         );
     }
     return map;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdl2::rect::{Point, Rect};
+
+    // ------- mouse_over -------
+
+    #[test]
+    fn test_mouse_over_inside() {
+        let rect = Rect::new(10, 10, 100, 50);
+        let point = Point::new(50, 30);
+        assert!(mouse_over(rect, point));
+    }
+
+    #[test]
+    fn test_mouse_over_outside_right() {
+        let rect = Rect::new(10, 10, 100, 50);
+        let point = Point::new(200, 30);
+        assert!(!mouse_over(rect, point));
+    }
+
+    #[test]
+    fn test_mouse_over_outside_below() {
+        let rect = Rect::new(10, 10, 100, 50);
+        let point = Point::new(50, 100);
+        assert!(!mouse_over(rect, point));
+    }
+
+    #[test]
+    fn test_mouse_over_top_left_corner() {
+        let rect = Rect::new(10, 10, 100, 50);
+        let point = Point::new(10, 10);
+        assert!(mouse_over(rect, point));
+    }
+
+    #[test]
+    fn test_mouse_over_origin() {
+        let rect = Rect::new(0, 0, 100, 100);
+        let point = Point::new(0, 0);
+        assert!(mouse_over(rect, point));
+    }
+
+    #[test]
+    fn test_mouse_over_negative_position() {
+        let rect = Rect::new(10, 10, 100, 50);
+        let point = Point::new(-5, -5);
+        assert!(!mouse_over(rect, point));
+    }
+
+    // ------- calculate_scaled_font_size -------
+
+    #[test]
+    fn test_font_size_fits_in_width() {
+        // 10 chars * 8px = 80px, available = 200 → returns 80
+        let size = calculate_scaled_font_size(10, 200);
+        assert_eq!(size, 80);
+    }
+
+    #[test]
+    fn test_font_size_overflows_width() {
+        // 50 chars * 8px = 400px, available = 200 → scaled down
+        let size = calculate_scaled_font_size(50, 200);
+        assert!(size <= 200);
+        assert!(size >= 4);
+    }
+
+    #[test]
+    fn test_font_size_minimum() {
+        // Very short width → should be at least 4
+        let size = calculate_scaled_font_size(100, 1);
+        assert_eq!(size, 4);
+    }
+
+    #[test]
+    fn test_font_size_exact_fit() {
+        // 10 chars * 8px = 80px, available = 80 → returns 80
+        let size = calculate_scaled_font_size(10, 80);
+        assert_eq!(size, 80);
+    }
+
+    #[test]
+    fn test_font_size_single_char() {
+        let size = calculate_scaled_font_size(1, 100);
+        assert_eq!(size, 8);
+    }
+
+    #[test]
+    fn test_font_size_zero_text_len() {
+        let size = calculate_scaled_font_size(0, 100);
+        assert_eq!(size, 4); // minimum
+    }
 }

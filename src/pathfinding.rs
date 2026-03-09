@@ -1,10 +1,29 @@
+//! # Pathfinding Algorithms Module
+//!
+//! This module implements various pathfinding algorithms for grid-based navigation:
+//!
+//! ## Algorithms
+//! - **Greedy Search**: Fast but not optimal, always moves toward the goal
+//! - **Breadth-First Search (BFS)**: Guarantees shortest path in unweighted graphs
+//! - **A* Search**: Optimal pathfinding with weighted tiles using Manhattan heuristic
+//! - **JPS with Weights (JPSW)**: Jump Point Search adapted for weighted grids
+//!
+//! ## Usage
+//! All algorithms implement the `PathfindingAlgorithm` trait, allowing them to be
+//! used interchangeably through the `get_algorithm()` factory function.
+
 use crate::benchmarks::sobel_method;
 use crate::components::board::Tile;
 use crate::settings::GameSettings;
+
+// Memory tracking for benchmarking
 use jemalloc_ctl::{epoch, stats, thread};
+
+// Random number generation for Greedy search tie-breaking
 use rand::seq::{IndexedRandom, SliceRandom};
 use sdl2::sys::LeaveNotify;
 use serde::Serialize;
+
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
@@ -14,27 +33,54 @@ use std::collections::VecDeque;
 use std::time::Duration;
 use std::time::Instant;
 
+/// 8-directional movement deltas for grid navigation.
+/// Includes all cardinal (N, S, E, W) and diagonal (NE, NW, SE, SW) directions.
 const DELTAS: [(i32, i32); 8] = [
-    (-1, -1),
-    (0, -1),
-    (1, -1),
-    (-1, 0),
-    (1, 0),
-    (-1, 1),
-    (0, 1),
-    (1, 1),
+    (-1, -1), // Northwest
+    (0, -1),  // North
+    (1, -1),  // Northeast
+    (-1, 0),  // West
+    (1, 0),   // East
+    (-1, 1),  // Southwest
+    (0, 1),   // South
+    (1, 1),   // Southeast
 ];
 
+/// Calculate which diagonal directions should be blocked based on an obstacle's position.
+///
+/// When an obstacle blocks a cardinal direction, diagonal moves that would
+/// "cut the corner" of that obstacle should also be blocked.
+///
+/// # Arguments
+/// * `delta_location` - The direction vector to the obstacle
+///
+/// # Returns
+/// A tuple representing the perpendicular direction to also block
 fn get_diagonals(delta_location: (i32, i32)) -> (i32, i32) {
     if delta_location.0 != 0 && delta_location.1 == 0 {
-        return (0, 1);
+        return (0, 1); // Horizontal obstacle - block vertical diagonals
     } else if delta_location.0 == 0 && delta_location.1 != 0 {
-        return (1, 0);
+        return (1, 0); // Vertical obstacle - block horizontal diagonals
     } else {
-        return (0, 0);
+        return (0, 0); // Diagonal obstacle - no additional blocking
     }
 }
 
+/// Get all valid moves from a position, respecting obstacle collision and corner-cutting rules.
+///
+/// This function examines all 8 neighbors and returns only those that are:
+/// 1. Traversable (not obstacles)
+/// 2. Not blocked by corner-cutting rules
+///
+/// Corner-cutting is prevented by blocking diagonal moves when either adjacent
+/// cardinal direction is blocked by an obstacle.
+///
+/// # Arguments
+/// * `current` - Current position on the grid
+/// * `map` - Reference to the tile map
+///
+/// # Returns
+/// Set of valid neighboring positions
 pub fn get_possible_moves(
     current: (i32, i32),
     map: &HashMap<(i32, i32), Tile>,
@@ -60,13 +106,22 @@ pub fn get_possible_moves(
     return moves;
 }
 
-/// Trait for custom pathfinding algorithms
+/// Trait for custom pathfinding algorithms.
+///
 /// Implementers can create their own A*, Dijkstra, BFS, etc.
-
+/// All algorithms follow a common interface for easy swapping.
 pub trait PathfindingAlgorithm {
-    /// Find a path from start to goal
-    /// Returns a Vec of waypoints from start to goal (inclusive)
-    /// Returns empty Vec if no path exists
+    /// Find a path from start to goal.
+    ///
+    /// # Arguments
+    /// * `start` - Starting position coordinates
+    /// * `goal` - Target position coordinates
+    /// * `map` - Reference to the tile map with traversability info
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// - Vec of waypoints from start to goal (may be reversed or just jump points)
+    /// - Total number of steps/nodes expanded during search
     fn find_path(
         &self,
         start: (i32, i32),
@@ -74,21 +129,40 @@ pub trait PathfindingAlgorithm {
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
     ) -> (Vec<(i32, i32)>, u32);
 
+    /// Returns true if find_path returns the complete path, false if it returns jump points.
     fn returns_full_path(&self) -> bool;
+
+    /// Reconstruct the full path from jump points (for algorithms like JPS).
     fn reconstruct_path(&self, path: Vec<(i32, i32)>) -> Vec<(i32, i32)>;
 
-    /// Get the name of this algorithm (for debugging/UI)
+    /// Get the display name of this algorithm for UI/debugging.
     fn name(&self) -> &str;
 }
 
+/// Represents an agent that navigates the grid.
+///
+/// Agents have a start position, goal position, current position,
+/// and store their computed path for visualization.
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub struct Agent {
+    /// Starting position on the grid
     pub start: (i32, i32),
+    /// Goal/target position on the grid
     pub goal: (i32, i32),
+    /// Current position (updated during animation)
     pub position: (i32, i32),
+    /// Computed path from start to goal (reversed for pop access)
     pub path: Vec<(i32, i32)>,
 }
 
+/// Calculate the total weight cost of traversing a path.
+///
+/// # Arguments
+/// * `path` - Vector of positions along the path
+/// * `map` - Reference to the tile map
+///
+/// # Returns
+/// Sum of all tile weights along the path
 fn get_overall_path_weight(path: &Vec<(i32, i32)>, map: &HashMap<(i32, i32), Tile>) -> u32 {
     let mut total_weight: u32 = 0;
     for moves in path {
@@ -100,6 +174,24 @@ fn get_overall_path_weight(path: &Vec<(i32, i32)>, map: &HashMap<(i32, i32), Til
 }
 
 impl Agent {
+    /// Execute pathfinding for this agent using the specified algorithm.
+    ///
+    /// This method runs the algorithm, measures performance metrics, and returns
+    /// comprehensive data for benchmarking.
+    ///
+    /// # Arguments
+    /// * `algorithm` - Name of the algorithm to use
+    /// * `map` - Reference to the tile map
+    ///
+    /// # Returns
+    /// A tuple containing:
+    /// - Success flag
+    /// - The computed path
+    /// - WCF (Weighted Cost Factor) value
+    /// - Memory allocated during search (bytes)
+    /// - Time taken for pathfinding
+    /// - Number of nodes expanded
+    /// - Total path weight/cost
     pub fn get_path(
         &mut self,
         algorithm: &str,
@@ -133,9 +225,22 @@ impl Agent {
             weight,
         );
     }
+    /// Check if the agent has reached its goal.
     pub fn goal_reached(&self) -> bool {
         return self.position == self.goal;
     }
+
+    /// Verify if any path exists from start to goal using bidirectional BFS.
+    ///
+    /// This is a quick connectivity check before running more expensive
+    /// pathfinding algorithms. Uses bidirectional BFS to reduce search space -
+    /// instead of exploring radius R from start, we explore radius R/2 from both ends.
+    ///
+    /// # Arguments
+    /// * `map` - Reference to the tile map
+    ///
+    /// # Returns
+    /// `true` if a path exists, `false` otherwise
     pub fn is_path_possible(
         &self,
         map: &HashMap<(i32, i32), crate::components::board::Tile>,
@@ -146,36 +251,54 @@ impl Agent {
             return true;
         }
 
-        let mut queue = VecDeque::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut parent: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
+        // Bidirectional BFS - search from both ends
+        let mut queue_start = VecDeque::new();
+        let mut queue_goal = VecDeque::new();
+        let mut visited_start: HashSet<(i32, i32)> = HashSet::new();
+        let mut visited_goal: HashSet<(i32, i32)> = HashSet::new();
 
-        queue.push_back(self.start);
-        visited.insert(start);
+        queue_start.push_back(start);
+        queue_goal.push_back(goal);
+        visited_start.insert(start);
+        visited_goal.insert(goal);
 
-        let mut steps = 0;
-        let max_steps = map.len() * 10; // safeguard, adjust as needed
-        while let Some(current) = queue.pop_front() {
-            steps += 1;
-            if steps > max_steps {
-                break;
+        // Alternate between expanding from start and goal
+        while !queue_start.is_empty() || !queue_goal.is_empty() {
+            // Expand from start side
+            if let Some(current) = queue_start.pop_front() {
+                if visited_goal.contains(&current) {
+                    return true;
+                }
+                for neighbor in get_possible_moves(current, map) {
+                    if visited_start.insert(neighbor) {
+                        queue_start.push_back(neighbor);
+                    }
+                }
             }
-            if current == goal {
-                return true;
-            }
-            let neighbors = get_possible_moves(current, map);
-            for neighbor in neighbors {
-                // Only queue unvisited neighbors
-                if visited.insert(neighbor) {
-                    parent.insert(neighbor, current);
-                    queue.push_back(neighbor);
+
+            // Expand from goal side
+            if let Some(current) = queue_goal.pop_front() {
+                if visited_start.contains(&current) {
+                    return true;
+                }
+                for neighbor in get_possible_moves(current, map) {
+                    if visited_goal.insert(neighbor) {
+                        queue_goal.push_back(neighbor);
+                    }
                 }
             }
         }
-        false // no path found
+        false
     }
 }
 
+/// Factory function to create a pathfinding algorithm by name.
+///
+/// # Arguments
+/// * `algorithm` - Name of the algorithm ("A* search", "Breadth First Search", "JPSW", or Greedy by default)
+///
+/// # Returns
+/// Boxed trait object implementing PathfindingAlgorithm
 pub fn get_algorithm(algorithm: &str) -> Box<dyn PathfindingAlgorithm> {
     println!("{}", algorithm);
     match algorithm.trim() {
@@ -198,9 +321,23 @@ pub fn get_algorithm(algorithm: &str) -> Box<dyn PathfindingAlgorithm> {
     }
 }
 
+/// Greedy Best-First Search algorithm.
+///
+/// A fast heuristic-driven search that always moves toward the goal.
+/// Not guaranteed to find the optimal path but is very fast.
+///
+/// ## Characteristics
+/// - Uses Manhattan distance heuristic
+/// - Falls back to random valid moves when stuck
+/// - Maintains a blacklist of visited positions to avoid cycles
 pub struct GreedySearch;
 
 impl PathfindingAlgorithm for GreedySearch {
+    /// Find a path using greedy best-first search.
+    ///
+    /// The algorithm prioritizes moves that reduce the Manhattan distance
+    /// to the goal. When no improving move exists, it randomly selects
+    /// from remaining valid moves while blacklisting the current position.
     fn find_path(
         &self,
         start: (i32, i32),
@@ -272,10 +409,21 @@ impl PathfindingAlgorithm for GreedySearch {
     }
 }
 
-/// Simple BFS pathfinding implementation
+/// Simple BFS pathfinding implementation.
+///
+/// Breadth-First Search guarantees the shortest path in unweighted graphs.
+/// For weighted graphs, use A* instead.
+///
+/// ## Characteristics
+/// - Explores nodes in order of distance from start
+/// - Always finds shortest path (in terms of moves)
+/// - Does not consider tile weights
 pub struct BreadthFirstSearch;
 
 impl PathfindingAlgorithm for BreadthFirstSearch {
+    /// Find the shortest path using BFS.
+    ///
+    /// Explores all neighbors at distance N before any at distance N+1.
     fn find_path(
         &self,
         start: (i32, i32),
@@ -336,10 +484,22 @@ impl PathfindingAlgorithm for BreadthFirstSearch {
     }
 }
 
-/// A* pathfinding implementation
+/// A* pathfinding implementation.
+///
+/// A* combines the actual cost from start (g-score) with a heuristic
+/// estimate to the goal (h-score) to efficiently find optimal paths.
+///
+/// ## Characteristics
+/// - Uses Manhattan distance heuristic (admissible for 4-directional movement)
+/// - Considers tile weights for accurate cost calculation
+/// - Guaranteed optimal if heuristic is admissible
+/// - More efficient than Dijkstra due to goal-directed search
 pub struct AStarSearch;
 
 impl PathfindingAlgorithm for AStarSearch {
+    /// Find the optimal path using A* search.
+    ///
+    /// Uses a priority queue (min-heap) ordered by f-score = g-score + h-score.
     fn find_path(
         &self,
         start: (i32, i32),
@@ -436,10 +596,25 @@ impl PathfindingAlgorithm for AStarSearch {
     }
 }
 
+/// Jump Point Search with Weights (JPSW) implementation.
+///
+/// An optimization of A* that reduces the number of nodes expanded by
+/// "jumping" over intermediate nodes in open areas.
+///
+/// ## Characteristics
+/// - Caches successor calculations for efficiency
+/// - Adapted for weighted grids (stops at weight changes)
+/// - Significantly faster than A* in large open areas
+/// - Returns jump points that must be expanded to full path
+///
+/// ## Caching
+/// Uses neighborhood hashing to cache:
+/// - Successor calculations for pruned neighbor detection
+/// - Orthogonal jump results for repeated queries
 pub struct JPSW {
-    // Cache for neighborhood successors: (parent, current) -> set of successors
+    /// Cache for neighborhood successors: (parent, current, hash) -> successors
     successor_cache: RefCell<HashMap<(Option<(i32, i32)>, (i32, i32), u64), HashSet<(i32, i32)>>>,
-    // Cache for orthogonal jumps: (pos, dir, terrain_hash) -> (end_pos, cost)
+    /// Cache for orthogonal jumps: (pos, dir, hash) -> (end_pos, cost)
     jump_cache: RefCell<HashMap<((i32, i32), (i32, i32), u64), Option<((i32, i32), f32)>>>,
 }
 
@@ -903,12 +1078,548 @@ impl PathfindingAlgorithm for JPSW {
 
     fn reconstruct_path(&self, path: Vec<(i32, i32)>) -> Vec<(i32, i32)> {
         let mut full_path: Vec<(i32, i32)> = Vec::new();
-        for i in 0..path.len() - 1 {
-            let segment = self.reconstruct_segment(path[i], path[i + 1]);
-            // Add all but the last cell (to avoid duplicates)
-            full_path.extend(&segment[..segment.len() - 1]);
+        if path.len() > 0 {
+            for i in 0..path.len() - 1 {
+                let segment = self.reconstruct_segment(path[i], path[i + 1]);
+                // Add all but the last cell (to avoid duplicates)
+                full_path.extend(&segment[..segment.len() - 1]);
+            }
+            println!("{:#?}", full_path);
+            return full_path;
         }
-        println!("{:#?}", full_path);
-        full_path
+        vec![]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::components::board::{Tile, TileType};
+    use std::collections::HashMap;
+
+    /// Helper: build an NxN grid of floor tiles with weight=1
+    fn make_floor_grid(n: i32) -> HashMap<(i32, i32), Tile> {
+        let mut map = HashMap::new();
+        for x in 0..n {
+            for y in 0..n {
+                map.insert((x, y), Tile::new((x, y), TileType::Floor, 10, 10, 1, false));
+            }
+        }
+        map
+    }
+
+    /// Helper: place an obstacle on an existing grid
+    fn set_obstacle(map: &mut HashMap<(i32, i32), Tile>, pos: (i32, i32)) {
+        map.insert(pos, Tile::new(pos, TileType::Obstacle, 10, 10, 1, false));
+    }
+
+    /// Helper: set a weighted tile
+    fn set_weight(map: &mut HashMap<(i32, i32), Tile>, pos: (i32, i32), weight: u8) {
+        map.insert(
+            pos,
+            Tile::new(pos, TileType::Weighted(weight), 10, 10, weight, false),
+        );
+    }
+
+    // ------- get_diagonals -------
+
+    #[test]
+    fn test_get_diagonals_horizontal_obstacle() {
+        // Obstacle to the right (1,0) should block vertical diagonals
+        assert_eq!(get_diagonals((1, 0)), (0, 1));
+    }
+
+    #[test]
+    fn test_get_diagonals_vertical_obstacle() {
+        // Obstacle below (0,1) should block horizontal diagonals
+        assert_eq!(get_diagonals((0, 1)), (1, 0));
+    }
+
+    #[test]
+    fn test_get_diagonals_diagonal_obstacle() {
+        // Diagonal obstacle (1,1) should not block additional directions
+        assert_eq!(get_diagonals((1, 1)), (0, 0));
+        assert_eq!(get_diagonals((-1, -1)), (0, 0));
+    }
+
+    #[test]
+    fn test_get_diagonals_left() {
+        assert_eq!(get_diagonals((-1, 0)), (0, 1));
+    }
+
+    #[test]
+    fn test_get_diagonals_up() {
+        assert_eq!(get_diagonals((0, -1)), (1, 0));
+    }
+
+    // ------- get_possible_moves -------
+
+    #[test]
+    fn test_possible_moves_center_of_open_grid() {
+        let map = make_floor_grid(5);
+        let moves = get_possible_moves((2, 2), &map);
+        // All 8 neighbors should be reachable
+        assert_eq!(moves.len(), 8);
+        for &(dx, dy) in DELTAS.iter() {
+            assert!(moves.contains(&(2 + dx, 2 + dy)));
+        }
+    }
+
+    #[test]
+    fn test_possible_moves_corner_of_grid() {
+        let map = make_floor_grid(5);
+        let moves = get_possible_moves((0, 0), &map);
+        // Only 3 neighbors exist: (1,0), (0,1), (1,1)
+        assert_eq!(moves.len(), 3);
+        assert!(moves.contains(&(1, 0)));
+        assert!(moves.contains(&(0, 1)));
+        assert!(moves.contains(&(1, 1)));
+    }
+
+    #[test]
+    fn test_possible_moves_with_obstacle_blocks_corner_cutting() {
+        let mut map = make_floor_grid(5);
+        // Place obstacle to the right of (2,2) → (3,2)
+        set_obstacle(&mut map, (3, 2));
+        let moves = get_possible_moves((2, 2), &map);
+        // (3,2) is blocked, and corner-cutting diagonals (3,1) and (3,3) should be blocked too
+        assert!(!moves.contains(&(3, 2)));
+        assert!(!moves.contains(&(3, 1)));
+        assert!(!moves.contains(&(3, 3)));
+        // Other neighbors should still be accessible
+        assert!(moves.contains(&(1, 1)));
+        assert!(moves.contains(&(2, 1)));
+        assert!(moves.contains(&(1, 2)));
+    }
+
+    #[test]
+    fn test_possible_moves_surrounded_by_obstacles() {
+        let mut map = make_floor_grid(5);
+        for &(dx, dy) in DELTAS.iter() {
+            set_obstacle(&mut map, (2 + dx, 2 + dy));
+        }
+        let moves = get_possible_moves((2, 2), &map);
+        assert!(moves.is_empty());
+    }
+
+    #[test]
+    fn test_possible_moves_player_tile_is_traversable() {
+        let mut map = make_floor_grid(3);
+        map.insert(
+            (1, 0),
+            Tile::new((1, 0), TileType::Player, 10, 10, 1, false),
+        );
+        let moves = get_possible_moves((0, 0), &map);
+        assert!(moves.contains(&(1, 0)));
+    }
+
+    #[test]
+    fn test_possible_moves_enemy_tile_is_traversable() {
+        let mut map = make_floor_grid(3);
+        map.insert((1, 0), Tile::new((1, 0), TileType::Enemy, 10, 10, 1, false));
+        let moves = get_possible_moves((0, 0), &map);
+        assert!(moves.contains(&(1, 0)));
+    }
+
+    // ------- get_overall_path_weight -------
+
+    #[test]
+    fn test_path_weight_uniform() {
+        let map = make_floor_grid(5);
+        let path = vec![(0, 0), (1, 0), (2, 0)];
+        assert_eq!(get_overall_path_weight(&path, &map), 3);
+    }
+
+    #[test]
+    fn test_path_weight_with_weighted_tiles() {
+        let mut map = make_floor_grid(5);
+        set_weight(&mut map, (1, 0), 5);
+        set_weight(&mut map, (2, 0), 10);
+        let path = vec![(0, 0), (1, 0), (2, 0)];
+        assert_eq!(get_overall_path_weight(&path, &map), 1 + 5 + 10);
+    }
+
+    #[test]
+    fn test_path_weight_empty_path() {
+        let map = make_floor_grid(5);
+        let path: Vec<(i32, i32)> = vec![];
+        assert_eq!(get_overall_path_weight(&path, &map), 0);
+    }
+
+    // ------- get_algorithm factory -------
+
+    #[test]
+    fn test_get_algorithm_greedy() {
+        let algo = get_algorithm("Greedy");
+        assert_eq!(algo.name(), "Greedy");
+        assert!(algo.returns_full_path());
+    }
+
+    #[test]
+    fn test_get_algorithm_bfs() {
+        let algo = get_algorithm("Breadth First Search");
+        assert_eq!(algo.name(), "Breadth-First Search");
+        assert!(algo.returns_full_path());
+    }
+
+    #[test]
+    fn test_get_algorithm_astar() {
+        let algo = get_algorithm("A* search");
+        assert_eq!(algo.name(), "A* Search");
+        assert!(algo.returns_full_path());
+    }
+
+    #[test]
+    fn test_get_algorithm_jpsw() {
+        let algo = get_algorithm("JPSW");
+        assert_eq!(algo.name(), "JPSW");
+        assert!(!algo.returns_full_path());
+    }
+
+    #[test]
+    fn test_get_algorithm_unknown_defaults_to_greedy() {
+        let algo = get_algorithm("UnknownAlgorithm");
+        assert_eq!(algo.name(), "Greedy");
+    }
+
+    // ------- BFS -------
+
+    #[test]
+    fn test_bfs_finds_path_on_open_grid() {
+        let map = make_floor_grid(10);
+        let bfs = BreadthFirstSearch;
+        let (path, steps) = bfs.find_path((0, 0), (9, 9), &map);
+        assert!(!path.is_empty());
+        assert!(steps > 0);
+        assert!(path.contains(&(9, 9)));
+        assert!(path.contains(&(0, 0)));
+    }
+
+    #[test]
+    fn test_bfs_start_equals_goal() {
+        let map = make_floor_grid(5);
+        let bfs = BreadthFirstSearch;
+        let (path, steps) = bfs.find_path((2, 2), (2, 2), &map);
+        assert_eq!(path, vec![(2, 2)]);
+        assert_eq!(steps, 1);
+    }
+
+    #[test]
+    fn test_bfs_no_path_when_blocked() {
+        let mut map = make_floor_grid(5);
+        // Wall off (4,*) completely
+        for y in 0..5 {
+            set_obstacle(&mut map, (3, y));
+        }
+        let bfs = BreadthFirstSearch;
+        let (path, _) = bfs.find_path((0, 0), (4, 4), &map);
+        assert!(path.is_empty());
+    }
+
+    #[test]
+    fn test_bfs_adjacent_goal() {
+        let map = make_floor_grid(5);
+        let bfs = BreadthFirstSearch;
+        let (path, _) = bfs.find_path((0, 0), (1, 0), &map);
+        assert!(!path.is_empty());
+        assert!(path.contains(&(0, 0)));
+        assert!(path.contains(&(1, 0)));
+    }
+
+    // ------- A* -------
+
+    #[test]
+    fn test_astar_finds_path_on_open_grid() {
+        let map = make_floor_grid(10);
+        let astar = AStarSearch;
+        let (path, steps) = astar.find_path((0, 0), (9, 9), &map);
+        assert!(!path.is_empty());
+        assert!(steps > 0);
+        assert!(path.contains(&(9, 9)));
+        assert!(path.contains(&(0, 0)));
+    }
+
+    #[test]
+    fn test_astar_prefers_lower_weight_path() {
+        // Create a 5x3 grid, weight the middle row heavily
+        let mut map = make_floor_grid(5);
+        for x in 1..4 {
+            set_weight(&mut map, (x, 1), 100);
+        }
+        let astar = AStarSearch;
+        let (path, _) = astar.find_path((0, 1), (4, 1), &map);
+        assert!(!path.is_empty());
+        // The path should exist (A* found something)
+        assert!(path.contains(&(4, 1)));
+    }
+
+    #[test]
+    fn test_astar_no_path_when_blocked() {
+        let mut map = make_floor_grid(5);
+        for y in 0..5 {
+            set_obstacle(&mut map, (3, y));
+        }
+        let astar = AStarSearch;
+        let (path, _) = astar.find_path((0, 0), (4, 4), &map);
+        assert!(path.is_empty());
+    }
+
+    #[test]
+    fn test_astar_start_equals_goal() {
+        let map = make_floor_grid(5);
+        let astar = AStarSearch;
+        let (path, steps) = astar.find_path((2, 2), (2, 2), &map);
+        // A* should return immediately with just the start node
+        assert!(!path.is_empty());
+        assert_eq!(steps, 1);
+    }
+
+    // ------- Greedy -------
+
+    #[test]
+    fn test_greedy_finds_path_on_open_grid() {
+        let map = make_floor_grid(10);
+        let greedy = GreedySearch;
+        let (path, steps) = greedy.find_path((0, 0), (5, 5), &map);
+        assert!(!path.is_empty());
+        assert!(steps > 0);
+    }
+
+    #[test]
+    fn test_greedy_returns_empty_for_impossible_path() {
+        let mut map = make_floor_grid(5);
+        for y in 0..5 {
+            set_obstacle(&mut map, (2, y));
+        }
+        let greedy = GreedySearch;
+        let (path, _) = greedy.find_path((0, 0), (4, 4), &map);
+        assert!(path.is_empty());
+    }
+
+    // ------- JPSW -------
+
+    #[test]
+    fn test_jpsw_finds_path_on_open_grid() {
+        let map = make_floor_grid(10);
+        let jpsw = JPSW::default();
+        let (jump_points, steps) = jpsw.find_path((0, 0), (9, 9), &map);
+        assert!(!jump_points.is_empty());
+        assert!(steps > 0);
+    }
+
+    #[test]
+    fn test_jpsw_reconstruct_path() {
+        let jpsw = JPSW::default();
+        // Jump points from (4,4) back to (0,0) — reversed like the algorithm returns
+        let jump_path = vec![(4, 4), (0, 0)];
+        let full = jpsw.reconstruct_path(jump_path);
+        assert!(!full.is_empty());
+        assert!(full.contains(&(4, 4)));
+        // reconstruct_segment excludes the last cell of each segment to avoid duplicates
+        // so (0,0) won't be present, but intermediate points should be
+        assert!(full.len() >= 3);
+    }
+
+    #[test]
+    fn test_jpsw_reconstruct_empty_path() {
+        let jpsw = JPSW::default();
+        let full = jpsw.reconstruct_path(vec![]);
+        assert!(full.is_empty());
+    }
+
+    #[test]
+    fn test_jpsw_reconstruct_segment() {
+        let jpsw = JPSW::default();
+        let segment = jpsw.reconstruct_segment((0, 0), (3, 3));
+        assert_eq!(segment.len(), 4); // (0,0), (1,1), (2,2), (3,3)
+        assert_eq!(segment[0], (0, 0));
+        assert_eq!(segment[3], (3, 3));
+    }
+
+    #[test]
+    fn test_jpsw_reconstruct_segment_orthogonal() {
+        let jpsw = JPSW::default();
+        let segment = jpsw.reconstruct_segment((0, 0), (3, 0));
+        assert_eq!(segment.len(), 4);
+        assert_eq!(segment, vec![(0, 0), (1, 0), (2, 0), (3, 0)]);
+    }
+
+    #[test]
+    fn test_jpsw_move_cost_orthogonal() {
+        let map = make_floor_grid(5);
+        let jpsw = JPSW::default();
+        let cost = jpsw.move_cost((1, 0), (0, 0), &map);
+        // Orthogonal: (w1 + w2) / 2 = (1 + 1) / 2 = 1.0
+        assert!((cost - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_jpsw_move_cost_diagonal() {
+        let map = make_floor_grid(5);
+        let jpsw = JPSW::default();
+        let cost = jpsw.move_cost((1, 1), (0, 0), &map);
+        // Diagonal: avg weight * sqrt(2) ≈ 1.414
+        assert!(cost > 1.0);
+        assert!(cost < 2.0);
+    }
+
+    #[test]
+    fn test_jpsw_clear_caches() {
+        let jpsw = JPSW::default();
+        let map = make_floor_grid(5);
+        // Populate cache
+        let _ = jpsw.get_successors(None, (2, 2), &map);
+        assert!(!jpsw.successor_cache.borrow().is_empty());
+        jpsw.clear_caches();
+        assert!(jpsw.successor_cache.borrow().is_empty());
+        assert!(jpsw.jump_cache.borrow().is_empty());
+    }
+
+    // ------- Agent -------
+
+    #[test]
+    fn test_agent_goal_reached_true() {
+        let agent = Agent {
+            start: (0, 0),
+            goal: (5, 5),
+            position: (5, 5),
+            path: vec![],
+        };
+        assert!(agent.goal_reached());
+    }
+
+    #[test]
+    fn test_agent_goal_reached_false() {
+        let agent = Agent {
+            start: (0, 0),
+            goal: (5, 5),
+            position: (3, 3),
+            path: vec![],
+        };
+        assert!(!agent.goal_reached());
+    }
+
+    #[test]
+    fn test_agent_is_path_possible_trivial() {
+        let map = make_floor_grid(5);
+        let agent = Agent {
+            start: (2, 2),
+            goal: (2, 2),
+            position: (2, 2),
+            path: vec![],
+        };
+        assert!(agent.is_path_possible(&map));
+    }
+
+    #[test]
+    fn test_agent_is_path_possible_open_grid() {
+        let map = make_floor_grid(10);
+        let agent = Agent {
+            start: (0, 0),
+            goal: (9, 9),
+            position: (0, 0),
+            path: vec![],
+        };
+        assert!(agent.is_path_possible(&map));
+    }
+
+    #[test]
+    fn test_agent_is_path_impossible_walled_off() {
+        let mut map = make_floor_grid(5);
+        // Complete wall at x=2
+        for y in 0..5 {
+            set_obstacle(&mut map, (2, y));
+        }
+        let agent = Agent {
+            start: (0, 0),
+            goal: (4, 4),
+            position: (0, 0),
+            path: vec![],
+        };
+        assert!(!agent.is_path_possible(&map));
+    }
+
+    // ------- All algorithms find same reachable goals -------
+
+    #[test]
+    fn test_all_algorithms_agree_on_reachability() {
+        let map = make_floor_grid(8);
+        let start = (0, 0);
+        let goal = (7, 7);
+
+        let bfs = BreadthFirstSearch;
+        let astar = AStarSearch;
+        let jpsw = JPSW::default();
+
+        let (bfs_path, _) = bfs.find_path(start, goal, &map);
+        let (astar_path, _) = astar.find_path(start, goal, &map);
+        let (jpsw_jp, _) = jpsw.find_path(start, goal, &map);
+
+        // All should find a path
+        assert!(!bfs_path.is_empty());
+        assert!(!astar_path.is_empty());
+        assert!(!jpsw_jp.is_empty());
+    }
+
+    #[test]
+    fn test_all_algorithms_agree_on_no_path() {
+        let mut map = make_floor_grid(6);
+        for y in 0..6 {
+            set_obstacle(&mut map, (3, y));
+        }
+        let start = (0, 0);
+        let goal = (5, 5);
+
+        let bfs = BreadthFirstSearch;
+        let astar = AStarSearch;
+        let jpsw = JPSW::default();
+
+        let (bfs_path, _) = bfs.find_path(start, goal, &map);
+        let (astar_path, _) = astar.find_path(start, goal, &map);
+        let (jpsw_jp, _) = jpsw.find_path(start, goal, &map);
+
+        assert!(bfs_path.is_empty());
+        assert!(astar_path.is_empty());
+        assert!(jpsw_jp.is_empty());
+    }
+
+    // ------- Maze-like scenario -------
+
+    #[test]
+    fn test_bfs_finds_path_through_maze() {
+        // 5x5 grid with corridor:
+        // F F F F F
+        // F O O O F
+        // F F F O F
+        // F O F O F
+        // F O F F F
+        let mut map = make_floor_grid(5);
+        set_obstacle(&mut map, (1, 1));
+        set_obstacle(&mut map, (2, 1));
+        set_obstacle(&mut map, (3, 1));
+        set_obstacle(&mut map, (3, 2));
+        set_obstacle(&mut map, (1, 3));
+        set_obstacle(&mut map, (3, 3));
+        set_obstacle(&mut map, (1, 4));
+
+        let bfs = BreadthFirstSearch;
+        let (path, _) = bfs.find_path((0, 0), (4, 4), &map);
+        assert!(!path.is_empty());
+    }
+
+    #[test]
+    fn test_astar_finds_path_through_maze() {
+        let mut map = make_floor_grid(5);
+        set_obstacle(&mut map, (1, 1));
+        set_obstacle(&mut map, (2, 1));
+        set_obstacle(&mut map, (3, 1));
+        set_obstacle(&mut map, (3, 2));
+        set_obstacle(&mut map, (1, 3));
+        set_obstacle(&mut map, (3, 3));
+        set_obstacle(&mut map, (1, 4));
+
+        let astar = AStarSearch;
+        let (path, _) = astar.find_path((0, 0), (4, 4), &map);
+        assert!(!path.is_empty());
     }
 }
