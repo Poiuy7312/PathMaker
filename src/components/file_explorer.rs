@@ -339,7 +339,8 @@ impl FileExplorer {
 
     /// Navigate to a different directory.
     ///
-    /// Resets scroll position and clears button cache.
+    /// Lazily loads the directory's children from disk if they haven't been
+    /// scanned yet, then resets scroll position and clears the button cache.
     pub fn change_display(&mut self, new_display: String) {
         if self.current_display != new_display {
             for button in self.get_cur_buttons() {
@@ -348,6 +349,12 @@ impl FileExplorer {
                     cur.change_drawn(false);
                 }
             }
+
+            // Lazy-load: scan this directory from disk if not yet loaded
+            if fileDialog::is_directory(&new_display) {
+                fileDialog::ensure_children_loaded(&self.directories, &new_display);
+            }
+
             self.current_display = new_display;
             self.scroll_slider
                 .borrow_mut()

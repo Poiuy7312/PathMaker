@@ -140,14 +140,14 @@ pub fn add_file_to_dir_map(
     }
 }
 
-/// Convert a directory tree structure into a flat HashMap for efficient lookup.
+/// Convert a shallow directory tree into a flat HashMap for the initial view.
+///
+/// Only processes the root node and its immediate children (one level).
+/// Deeper directories are loaded on demand via `fileDialog::ensure_children_loaded()`.
 ///
 /// Creates a map where:
 /// - Keys are full file/directory paths
 /// - Values are tuples of (StandardButton, Vec<child_paths>)
-///
-/// This structure allows O(1) lookup of any node and its children,
-/// which is essential for the file explorer's navigation.
 ///
 /// # Arguments
 /// * `node` - Root node of the directory tree to convert
@@ -179,36 +179,33 @@ pub fn get_dir_map(
         };
 
         for child in &node.children {
-            if child.is_dir {
-                buttons.push(child.path.to_string_lossy().to_string());
+            let child_path = child.path.to_string_lossy().to_string();
+            buttons.push(child_path.clone());
 
-                let child_map = get_dir_map(child, width);
-                map.extend(child_map);
-            } else {
-                map.insert(
-                    child.path.to_string_lossy().to_string(),
-                    (
-                        StandardButton {
-                            height: 25,
-                            width: 200,
-                            location: Point::new(0, 62),
-                            text_color: WHITE,
-                            background_color: QUATERNARY_COLOR,
-                            hover: RefCell::new(false),
-                            text: child.name.to_string(),
-                            id: child.path.to_string_lossy().to_string(),
-                            active: false,
-                            filter: None,
-                            drawn: RefCell::new(false),
-                            cached_texture: None,
-                        },
-                        Vec::new(),
-                    ),
-                );
-
-                buttons.push(child.path.to_string_lossy().to_string());
-            }
+            // Insert the child entry (directories get an empty children vec,
+            // which signals that their contents haven't been loaded yet)
+            map.insert(
+                child_path.clone(),
+                (
+                    StandardButton {
+                        height: 25,
+                        width: 200,
+                        location: Point::new(0, 62),
+                        text_color: WHITE,
+                        background_color: QUATERNARY_COLOR,
+                        hover: RefCell::new(false),
+                        text: child.name.to_string(),
+                        id: child_path,
+                        active: false,
+                        filter: None,
+                        drawn: RefCell::new(false),
+                        cached_texture: None,
+                    },
+                    Vec::new(),
+                ),
+            );
         }
+
         map.insert(
             node.path.to_string_lossy().to_string(),
             (current_button, buttons),

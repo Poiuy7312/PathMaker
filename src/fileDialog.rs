@@ -53,17 +53,18 @@ pub fn is_directory(path: &str) -> bool {
     return path.is_dir();
 }
 
-/// Recursively build a DirectoryNode tree from a filesystem path.
+/// Build a DirectoryNode tree from a filesystem path, scanning only one level deep.
 ///
 /// Only includes JSON files and directories (excluding hidden entries).
-/// This creates the data structure used by the file explorer component.
+/// Child directories are listed but their contents are **not** recursively scanned;
+/// they are loaded on demand via `ensure_children_loaded()`.
 ///
 /// # Arguments
 /// * `path` - Root path to start building from
 ///
 /// # Returns
-/// A DirectoryNode representing the path and all its contents
-fn build_tree(path: &Path) -> DirectoryNode {
+/// A DirectoryNode representing the path and its immediate children
+fn build_shallow(path: &Path) -> DirectoryNode {
     let allowed_extension = OsStr::new("json");
     let name = path
         .file_name()
@@ -82,20 +83,29 @@ fn build_tree(path: &Path) -> DirectoryNode {
             for entry in entries.filter_map(|e| e.ok()) {
                 if is_not_hidden(&entry) {
                     let p = entry.path();
+                    let child_name = p
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.to_string_lossy().into_owned());
                     if p.is_dir() {
-                        node.children.push(build_tree(&p));
-                    } else {
-                        match p.extension() {
-                            Some(ext) => {
-                                if ext == allowed_extension {
-                                    node.children.push(build_tree(&p));
-                                }
-                            }
-                            None => {}
+                        // Add the directory entry but don't recurse into it
+                        node.children.push(DirectoryNode {
+                            name: child_name,
+                            path: p,
+                            is_dir: true,
+                            children: Vec::new(),
+                        });
+                    } else if let Some(ext) = p.extension() {
+                        if ext == allowed_extension {
+                            node.children.push(DirectoryNode {
+                                name: child_name,
+                                path: p,
+                                is_dir: false,
+                                children: Vec::new(),
+                            });
                         }
                     }
                 }
-                // Skip hidden entries if desired, or add filtering here.
             }
         }
     }
@@ -136,13 +146,120 @@ pub fn get_current_directory() -> PathBuf {
     }
 }
 
-/// Build a complete file tree starting from the home directory.
+/// Build a shallow file tree starting from the home directory.
+///
+/// Only the immediate children of the home directory are scanned.
+/// Subdirectory contents are loaded lazily via `ensure_children_loaded()`.
 ///
 /// # Returns
 /// DirectoryNode tree rooted at the user's home directory
 pub fn get_file_tree() -> DirectoryNode {
     let current_dir = get_current_directory();
-    build_tree(&current_dir)
+    build_shallow(&current_dir)
+}
+
+/// Lazily load the immediate children of a directory into the shared directory map.
+///
+/// When the user navigates into a directory that hasn't been scanned yet,
+/// this function reads its contents from disk and inserts the entries into
+/// the provided `directories` map. If the directory has already been loaded
+/// (i.e. its key exists with children), this is a no-op.
+///
+/// # Arguments
+/// * `directories` - Shared directory map to populate
+/// * `dir_path` - Path of the directory to scan
+pub fn ensure_children_loaded(
+    directories: &std::rc::Rc<
+        std::cell::RefCell<
+            HashMap<String, (crate::components::button::StandardButton, Vec<String>)>,
+        >,
+    >,
+    dir_path: &str,
+) {
+    use crate::colors::*;
+    use crate::components::button::StandardButton;
+    use sdl2::rect::Point;
+
+    // Check if this directory already has children loaded
+    {
+        let map = directories.borrow();
+        if let Some((_, children)) = map.get(dir_path) {
+            if !children.is_empty() {
+                return; // Already loaded
+            }
+        }
+    }
+
+    // Scan the directory from disk
+    let node = build_shallow(std::path::Path::new(dir_path));
+    if !node.is_dir {
+        return;
+    }
+
+    let mut child_paths: Vec<String> = Vec::new();
+    let mut new_entries: Vec<(String, StandardButton, bool)> = Vec::new();
+
+    for child in &node.children {
+        let child_path = child.path.to_string_lossy().to_string();
+        child_paths.push(child_path.clone());
+        new_entries.push((
+            child_path.clone(),
+            StandardButton {
+                height: 25,
+                width: 200,
+                location: Point::new(0, 62),
+                text_color: WHITE,
+                background_color: QUATERNARY_COLOR,
+                hover: std::cell::RefCell::new(false),
+                text: child.name.clone(),
+                id: child_path,
+                active: false,
+                filter: None,
+                drawn: std::cell::RefCell::new(false),
+                cached_texture: None,
+            },
+            child.is_dir,
+        ));
+    }
+
+    let mut map = directories.borrow_mut();
+
+    // Insert child entries that don't already exist
+    for (path, button, is_dir) in new_entries {
+        map.entry(path)
+            .or_insert_with(|| (button, if is_dir { Vec::new() } else { Vec::new() }));
+    }
+
+    // Update the parent's children list
+    if let Some((_, children)) = map.get_mut(dir_path) {
+        *children = child_paths;
+    } else {
+        // Parent wasn't in the map yet — insert it
+        let parent_name = std::path::Path::new(dir_path)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| dir_path.to_string());
+        map.insert(
+            dir_path.to_string(),
+            (
+                StandardButton {
+                    height: 25,
+                    width: 200,
+                    location: Point::new(0, 62),
+                    text_color: WHITE,
+                    background_color: QUATERNARY_COLOR,
+                    hover: std::cell::RefCell::new(false),
+                    text: parent_name,
+                    id: dir_path.to_string(),
+                    active: false,
+                    filter: None,
+                    drawn: std::cell::RefCell::new(false),
+                    cached_texture: None,
+                },
+                child_paths,
+            ),
+        );
+    }
 }
 
 /// Debug utility to print the directory tree structure.
@@ -163,86 +280,6 @@ fn print_tree(node: &DirectoryNode, indent: usize) {
     for child in &node.children {
         print_tree(child, indent + 2);
     }
-}
-
-/// Parse a map JSON file and extract tile positions.
-///
-/// Reads a JSON map file and extracts sets of coordinates for:
-/// - Obstacles
-/// - Player start positions
-/// - Enemy/goal positions
-///
-/// # Arguments
-/// * `file_string` - Contents of the JSON file as a string
-///
-/// # Returns
-/// Tuple containing:
-/// - Set of obstacle coordinates
-/// - Set of player coordinates
-/// - Set of enemy coordinates
-/// - Tile count in X direction
-/// - Tile count in Y direction
-pub fn parse_map_file(
-    file_string: String,
-) -> (
-    HashSet<(i32, i32)>,
-    HashSet<(i32, i32)>,
-    HashSet<(i32, i32)>,
-    u32,
-    u32,
-) {
-    let json: Value = serde_json::from_str(&file_string).expect("JSON was incorrectly formatted");
-    let tile_amount_x: u32 = json
-        .get("tile_amount_x")
-        .expect("no tile amount value")
-        .as_i64()
-        .expect("Invalid Number") as u32;
-    let tile_amount_y: u32 = json
-        .get("tile_amount_y")
-        .expect("no tile amount value")
-        .as_i64()
-        .expect("Invalid Number") as u32;
-    let mut obstacle_map: HashSet<(i32, i32)> = HashSet::new();
-    let mut player_map: HashSet<(i32, i32)> = HashSet::new();
-    let mut enemy_map: HashSet<(i32, i32)> = HashSet::new();
-    if let Some(obstacles) = json["obstacles"].as_array() {
-        obstacles.iter().for_each(|a| {
-            if let Some(cords) = a.as_array() {
-                obstacle_map.insert((
-                    cords[0].as_i64().expect("Invalid Number") as i32,
-                    cords[1].as_i64().expect("Invalid Number") as i32,
-                ));
-            }
-        })
-    }
-    if let Some(players) = json["player"].as_array() {
-        players.iter().for_each(|a| {
-            if let Some(cords) = a.as_array() {
-                player_map.insert((
-                    cords[0].as_i64().expect("Invalid Number") as i32,
-                    cords[1].as_i64().expect("Invalid Number") as i32,
-                ));
-            }
-        })
-    }
-    if let Some(enemies) = json["enemies"].as_array() {
-        enemies.iter().for_each(|a| {
-            if let Some(cords) = a.as_array() {
-                enemy_map.insert((
-                    cords[0].as_i64().expect("Invalid Number") as i32,
-                    cords[1].as_i64().expect("Invalid Number") as i32,
-                ));
-            }
-        })
-    }
-
-    return (
-        obstacle_map,
-        player_map,
-        enemy_map,
-        tile_amount_x,
-        tile_amount_y,
-    );
 }
 
 /// Read a file's contents as a string.
@@ -343,77 +380,7 @@ mod tests {
         assert!(dir.is_dir());
     }
 
-    // ------- parse_map_file -------
-
-    #[test]
-    fn test_parse_map_file_basic() {
-        let json = r#"{
-            "tile_amount_x": 10,
-            "tile_amount_y": 10,
-            "obstacles": [[1, 2], [3, 4]],
-            "player": [[0, 0]],
-            "enemies": [[9, 9]]
-        }"#;
-        let (obstacles, players, enemies, tx, ty) = parse_map_file(json.to_string());
-        assert_eq!(tx, 10);
-        assert_eq!(ty, 10);
-        assert_eq!(obstacles.len(), 2);
-        assert!(obstacles.contains(&(1, 2)));
-        assert!(obstacles.contains(&(3, 4)));
-        assert_eq!(players.len(), 1);
-        assert!(players.contains(&(0, 0)));
-        assert_eq!(enemies.len(), 1);
-        assert!(enemies.contains(&(9, 9)));
-    }
-
-    #[test]
-    fn test_parse_map_file_no_obstacles() {
-        let json = r#"{
-            "tile_amount_x": 5,
-            "tile_amount_y": 5,
-            "obstacles": [],
-            "player": [],
-            "enemies": []
-        }"#;
-        let (obstacles, players, enemies, tx, ty) = parse_map_file(json.to_string());
-        assert_eq!(tx, 5);
-        assert_eq!(ty, 5);
-        assert!(obstacles.is_empty());
-        assert!(players.is_empty());
-        assert!(enemies.is_empty());
-    }
-
-    #[test]
-    fn test_parse_map_file_missing_optional_fields() {
-        // Only tile_amount required, obstacles/player/enemies can be absent
-        let json = r#"{
-            "tile_amount_x": 20,
-            "tile_amount_y": 15
-        }"#;
-        let (obstacles, players, enemies, tx, ty) = parse_map_file(json.to_string());
-        assert_eq!(tx, 20);
-        assert_eq!(ty, 15);
-        assert!(obstacles.is_empty());
-        assert!(players.is_empty());
-        assert!(enemies.is_empty());
-    }
-
-    #[test]
-    fn test_parse_map_file_multiple_agents() {
-        let json = r#"{
-            "tile_amount_x": 10,
-            "tile_amount_y": 10,
-            "obstacles": [],
-            "player": [[0, 0], [1, 1], [2, 2]],
-            "enemies": [[9, 9], [8, 8], [7, 7]]
-        }"#;
-        let (_, players, enemies, _, _) = parse_map_file(json.to_string());
-        assert_eq!(players.len(), 3);
-        assert_eq!(enemies.len(), 3);
-    }
-
     // ------- read_file -------
-
     #[test]
     fn test_read_file_nonexistent() {
         let result = read_file("/tmp/this_file_does_not_exist_xyz.json");
@@ -442,21 +409,21 @@ mod tests {
         assert!(data_path.exists());
     }
 
-    // ------- build_tree -------
+    // ------- build_shallow -------
 
     #[test]
-    fn test_build_tree_on_tmp() {
-        let tree = build_tree(Path::new("/tmp"));
+    fn test_build_shallow_on_tmp() {
+        let tree = build_shallow(Path::new("/tmp"));
         assert_eq!(tree.name, "tmp");
         assert!(tree.is_dir);
     }
 
     #[test]
-    fn test_build_tree_file_node() {
+    fn test_build_shallow_file_node() {
         let dir = std::env::temp_dir();
         let path = dir.join("pathmaker_tree_test.json");
         std::fs::write(&path, "{}").unwrap();
-        let tree = build_tree(&path);
+        let tree = build_shallow(&path);
         assert!(!tree.is_dir);
         assert!(tree.children.is_empty());
         let _ = std::fs::remove_file(&path);
