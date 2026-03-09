@@ -17,6 +17,7 @@ use crate::components::board::Tile;
 use crate::settings::GameSettings;
 
 // Memory tracking for benchmarking
+#[cfg(not(target_os = "windows"))]
 use jemalloc_ctl::{epoch, stats, thread};
 
 // Random number generation for Greedy search tie-breaking
@@ -197,18 +198,30 @@ impl Agent {
         algorithm: &str,
         map: &HashMap<(i32, i32), Tile>,
     ) -> (bool, Vec<(i32, i32)>, f64, u64, Duration, u32, u32) {
+        // Memory tracking: jemalloc on Unix, cap allocator on Windows
+        #[cfg(not(target_os = "windows"))]
         let allocated = thread::allocatedp::mib().unwrap();
         let algorithm = get_algorithm(algorithm);
         let now = Instant::now();
-        epoch::advance().unwrap();
-        let before = allocated.read().unwrap().get();
-        // Call your function here
 
-        // Capture final stats
+        // Snapshot memory before pathfinding
+        #[cfg(not(target_os = "windows"))]
+        epoch::advance().unwrap();
+        #[cfg(not(target_os = "windows"))]
+        let before = allocated.read().unwrap().get() as u64;
+        #[cfg(target_os = "windows")]
+        let before = crate::ALLOC.allocated() as u64;
+
+        // Run pathfinding
         let (mut path, steps) = algorithm.find_path(self.start, self.goal, &map);
-        epoch::advance().unwrap();
 
-        let after = allocated.read().unwrap().get();
+        // Snapshot memory after pathfinding
+        #[cfg(not(target_os = "windows"))]
+        epoch::advance().unwrap();
+        #[cfg(not(target_os = "windows"))]
+        let after = allocated.read().unwrap().get() as u64;
+        #[cfg(target_os = "windows")]
+        let after = crate::ALLOC.allocated() as u64;
         let time = now.elapsed();
         if !algorithm.returns_full_path() {
             path = algorithm.reconstruct_path(path);

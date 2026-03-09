@@ -18,7 +18,13 @@
 extern crate sdl2;
 
 // Memory allocation and statistics tracking
+#[cfg(not(target_os = "windows"))]
 use jemalloc_ctl::{epoch, stats};
+
+// Cross-platform memory tracking allocator (used on Windows; jemalloc used on Unix)
+#[cfg(target_os = "windows")]
+#[global_allocator]
+static ALLOC: cap::Cap<std::alloc::System> = cap::Cap::new(std::alloc::System, usize::MAX);
 
 // SDL2 imports for graphics, events, and text rendering
 use sdl2::event::Event;
@@ -40,6 +46,7 @@ use std::{env, fs, thread};
 
 /// Global allocator using jemalloc for improved memory allocation performance
 /// and accurate memory usage tracking during pathfinding benchmarks.
+#[cfg(not(target_os = "windows"))]
 #[global_allocator]
 static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
