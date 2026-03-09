@@ -74,6 +74,13 @@ jobs:
           echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
           echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
 
+      - name: Install pkg-config (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install pkgconfiglite -y
+          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
+
       # --- Rust toolchain ---
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
