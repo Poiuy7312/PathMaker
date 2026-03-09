@@ -232,7 +232,7 @@ pub fn sobel_method(grid: &HashMap<(i32, i32), Tile>) -> f64 {
     return c_value / traversable_count;
 }
 
-pub fn run_overall_benchmark() {}
+//pub fn run_overall_benchmark() {}
 
 #[cfg(test)]
 mod tests {
