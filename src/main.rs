@@ -72,11 +72,22 @@ use crate::colors::*;
 const FONT_BYTES: &[u8] = include_bytes!("assets/open-sans/OpenSans-Semibold.ttf");
 const ICON_BYTES: &[u8] = include_bytes!("assets/Icon.svg");
 
-/// Returns the application data directory (~/.local/share/game_ex/) and
-/// ensures embedded assets are extracted there.
+/// Returns the application data directory and ensures embedded assets are extracted there.
+///
+/// Platform-specific locations:
+/// - Linux: `~/.local/share/game_ex/`
+/// - Windows: `%LOCALAPPDATA%\game_ex\`
 fn ensure_assets() -> PathBuf {
-    let home = env::var("HOME").expect("HOME environment variable not set");
-    let data_dir = PathBuf::from(home).join(".local/share/game_ex");
+    let data_dir = if cfg!(target_os = "windows") {
+        let appdata = env::var("LOCALAPPDATA")
+            .or_else(|_| env::var("APPDATA"))
+            .or_else(|_| env::var("USERPROFILE").map(|h| format!("{}\\AppData\\Local", h)))
+            .expect("Could not determine application data directory");
+        PathBuf::from(appdata).join("game_ex")
+    } else {
+        let home = env::var("HOME").expect("HOME environment variable not set");
+        PathBuf::from(home).join(".local/share/game_ex")
+    };
     let font_dir = data_dir.join("fonts");
 
     fs::create_dir_all(&font_dir).expect("Failed to create data directory");

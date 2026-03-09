@@ -118,12 +118,22 @@ fn is_not_hidden(entry: &DirEntry) -> bool {
         .unwrap_or(false)
 }
 
-/// Get the user's home directory.
+/// Get the user's home directory (cross-platform).
+///
+/// Uses `USERPROFILE` on Windows and `HOME` on Unix.
 ///
 /// # Returns
 /// PathBuf to the home directory
 pub fn get_current_directory() -> PathBuf {
-    return env::home_dir().expect("No home directory");
+    if cfg!(target_os = "windows") {
+        env::var("USERPROFILE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("C:\\"))
+    } else {
+        env::var("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("/"))
+    }
 }
 
 /// Build a complete file tree starting from the home directory.

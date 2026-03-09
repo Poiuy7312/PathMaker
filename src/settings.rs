@@ -150,10 +150,20 @@ impl GameSettings {
 
     /// Get the default path for the settings file.
     ///
-    /// On Linux, this is `~/.config/pathmaker/settings.json`.
-    /// Falls back to `./settings.json` if HOME is not set.
+    /// Platform-specific locations:
+    /// - Linux: `~/.config/pathmaker/settings.json`
+    /// - Windows: `%APPDATA%\pathmaker\settings.json`
+    /// Falls back to `./settings.json` if no home directory is found.
     pub fn get_default_path() -> String {
-        if let Ok(home) = std::env::var("HOME") {
+        if cfg!(target_os = "windows") {
+            if let Ok(appdata) = std::env::var("APPDATA") {
+                format!("{}\\pathmaker\\settings.json", appdata)
+            } else if let Ok(profile) = std::env::var("USERPROFILE") {
+                format!("{}\\AppData\\Roaming\\pathmaker\\settings.json", profile)
+            } else {
+                String::from(".\\settings.json")
+            }
+        } else if let Ok(home) = std::env::var("HOME") {
             format!("{}/.config/pathmaker/settings.json", home)
         } else {
             String::from("./settings.json")
