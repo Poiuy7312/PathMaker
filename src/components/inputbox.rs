@@ -246,3 +246,148 @@ impl InputBox {
         self.clicked_on
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdl2::pixels::Color;
+    use sdl2::rect::Point;
+    use std::cell::RefCell;
+
+    fn make_inputbox(x: i32, y: i32, w: u32, h: u32) -> InputBox {
+        InputBox {
+            default_text: "Placeholder".to_string(),
+            text: "".to_string(),
+            active: true,
+            text_color: Color::RGB(255, 255, 255),
+            background_color: Color::RGB(84, 84, 84),
+            clicked_on: false,
+            height: h,
+            width: w,
+            id: "test_input".to_string(),
+            location: Point::new(x, y),
+            drawn: RefCell::new(false),
+        }
+    }
+
+    #[test]
+    fn test_inputbox_get_id() {
+        let ib = make_inputbox(0, 0, 200, 30);
+        assert_eq!(ib.get_id(), "test_input");
+    }
+
+    #[test]
+    fn test_inputbox_click_inside_sets_focus() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        assert!(!ib.clicked_on());
+        ib.on_click(Point::new(100, 15));
+        assert!(ib.clicked_on());
+    }
+
+    #[test]
+    fn test_inputbox_click_inside_sets_space_when_empty() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        assert_eq!(ib.text, "");
+        ib.on_click(Point::new(100, 15));
+        assert_eq!(ib.text, " ");
+    }
+
+    #[test]
+    fn test_inputbox_click_outside_no_focus() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        let (clicked, _) = ib.on_click(Point::new(300, 300));
+        assert!(!clicked);
+        assert!(!ib.clicked_on());
+    }
+
+    #[test]
+    fn test_inputbox_mouse_over_inside() {
+        let ib = make_inputbox(10, 10, 200, 30);
+        assert!(ib.mouse_over_component(Point::new(50, 20)));
+    }
+
+    #[test]
+    fn test_inputbox_mouse_over_outside() {
+        let ib = make_inputbox(10, 10, 200, 30);
+        assert!(!ib.mouse_over_component(Point::new(300, 300)));
+    }
+
+    #[test]
+    fn test_inputbox_change_text() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        ib.change_text("Hello".to_string());
+        assert_eq!(ib.text, "Hello");
+    }
+
+    #[test]
+    fn test_inputbox_change_label() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        ib.change_label("New Placeholder".to_string());
+        assert_eq!(ib.default_text, "New Placeholder");
+    }
+
+    #[test]
+    fn test_inputbox_change_location() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        ib.change_location(Point::new(50, 100));
+        assert_eq!(ib.get_location(), Point::new(50, 100));
+    }
+
+    #[test]
+    fn test_inputbox_change_dimensions() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        ib.change_width(300);
+        ib.change_height(50);
+        assert_eq!(ib.get_width(), 300);
+        assert_eq!(ib.get_height(), 50);
+    }
+
+    #[test]
+    fn test_inputbox_active_state() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        assert!(ib.is_active());
+        ib.change_active(false);
+        assert!(!ib.is_active());
+    }
+
+    #[test]
+    fn test_inputbox_drawn_state() {
+        let ib = make_inputbox(0, 0, 200, 30);
+        assert!(!ib.is_drawn());
+        ib.change_drawn(true);
+        assert!(ib.is_drawn());
+        ib.change_drawn(false);
+        assert!(!ib.is_drawn());
+    }
+
+    #[test]
+    fn test_inputbox_get_rect() {
+        let ib = make_inputbox(10, 20, 200, 30);
+        let rect = ib.get_rect(Point::new(10, 20));
+        assert_eq!(rect.x(), 10);
+        assert_eq!(rect.y(), 20);
+        assert_eq!(rect.width(), 200);
+        assert_eq!(rect.height(), 30);
+    }
+
+    #[test]
+    fn test_inputbox_interface_traits() {
+        let ib = make_inputbox(0, 0, 200, 30);
+        assert!(!ib.is_static());
+        assert!(!ib.has_indent());
+        assert_eq!(ib.draw_priority(), 1);
+        assert!(!ib.dirty_parent());
+        assert!(!ib.important_component_clicked());
+        assert!(!ib.deactivate_parent());
+        assert!(ib.after_click());
+    }
+
+    #[test]
+    fn test_inputbox_click_preserves_existing_text() {
+        let mut ib = make_inputbox(0, 0, 200, 30);
+        ib.text = "existing".to_string();
+        ib.on_click(Point::new(100, 15));
+        assert_eq!(ib.text, "existing");
+        assert!(ib.clicked_on());
+    }
+}

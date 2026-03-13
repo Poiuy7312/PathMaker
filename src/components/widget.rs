@@ -438,3 +438,224 @@ impl Widget {
         // Single pass through sorted list
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::colors::*;
+    use crate::components::button::*;
+    use crate::components::inputbox::InputBox;
+    use sdl2::pixels::Color;
+    use sdl2::rect::Point;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    fn make_button(id: &'static str) -> Box<dyn Interface> {
+        Box::new(StandardButton {
+            height: 30,
+            width: 100,
+            location: Point::new(0, 0),
+            text_color: WHITE,
+            background_color: PRIMARY_COLOR,
+            hover: RefCell::new(false),
+            text: id.to_string(),
+            id: id.to_string(),
+            filter: None,
+            active: false,
+            drawn: RefCell::new(false),
+            cached_texture: None,
+        })
+    }
+
+    fn make_test_widget() -> Widget {
+        let buttons: HashMap<&'static str, Box<dyn Interface>> = HashMap::from([
+            ("btn_a", make_button("btn_a")),
+            ("btn_b", make_button("btn_b")),
+        ]);
+
+        let layout: Vec<Vec<&'static str>> = vec![vec!["btn_a", "btn_b"], vec!["btn_a", "btn_b"]];
+
+        Widget {
+            location: Point::new(100, 50),
+            id: "test_widget".to_string(),
+            result: None,
+            height: 200,
+            width: 400,
+            active: true,
+            buttons,
+            layout,
+            drawn: false,
+            cached_draw_order: None,
+            cached_interface_location: None,
+            important_component_clicked: false,
+        }
+    }
+
+    #[test]
+    fn test_widget_get_id() {
+        let widget = make_test_widget();
+        assert_eq!(widget.get_id(), "test_widget");
+    }
+
+    #[test]
+    fn test_widget_get_rect() {
+        let widget = make_test_widget();
+        let rect = widget.get_rect();
+        assert_eq!(rect.x(), 100);
+        assert_eq!(rect.y(), 50);
+        assert_eq!(rect.width(), 400);
+        assert_eq!(rect.height(), 200);
+    }
+
+    #[test]
+    fn test_widget_change_location() {
+        let mut widget = make_test_widget();
+        widget.change_location(Point::new(200, 300));
+        assert_eq!(widget.get_location(), Point::new(200, 300));
+    }
+
+    #[test]
+    fn test_widget_change_dimensions() {
+        let mut widget = make_test_widget();
+        widget.change_width(600);
+        widget.change_height(400);
+        assert_eq!(widget.get_width(), 600);
+        assert_eq!(widget.get_height(), 400);
+    }
+
+    #[test]
+    fn test_widget_active_state() {
+        let mut widget = make_test_widget();
+        assert!(widget.is_active());
+        widget.change_active(false);
+        assert!(!widget.is_active());
+    }
+
+    #[test]
+    fn test_widget_active_cascades_to_children() {
+        let mut widget = make_test_widget();
+        widget.change_active(false);
+        for (_, btn) in widget.buttons.iter() {
+            assert!(!btn.is_active());
+        }
+        widget.change_active(true);
+        for (_, btn) in widget.buttons.iter() {
+            assert!(btn.is_active());
+        }
+    }
+
+    #[test]
+    fn test_widget_result() {
+        let mut widget = make_test_widget();
+        assert!(widget.get_result().is_none());
+        widget.change_result(Some("test_path".to_string()));
+        assert_eq!(widget.get_result(), Some("test_path".to_string()));
+    }
+
+    #[test]
+    fn test_widget_change_result_to_none() {
+        let mut widget = make_test_widget();
+        widget.change_result(Some("path".to_string()));
+        widget.change_result(None);
+        assert!(widget.get_result().is_none());
+    }
+
+    #[test]
+    fn test_widget_drawn_state() {
+        let mut widget = make_test_widget();
+        assert!(!widget.drawn);
+        widget.change_drawn(true);
+        assert!(widget.drawn);
+        widget.change_drawn(false);
+        assert!(!widget.drawn);
+    }
+
+    #[test]
+    fn test_widget_drawn_cascades_to_children() {
+        let mut widget = make_test_widget();
+        widget.change_drawn(true);
+        for (_, btn) in widget.buttons.iter() {
+            assert!(btn.is_drawn());
+        }
+        widget.change_drawn(false);
+        for (_, btn) in widget.buttons.iter() {
+            assert!(!btn.is_drawn());
+        }
+    }
+
+    #[test]
+    fn test_widget_mouse_over_inside() {
+        let widget = make_test_widget();
+        assert!(widget.mouse_over_component(Point::new(300, 150)));
+    }
+
+    #[test]
+    fn test_widget_mouse_over_outside() {
+        let widget = make_test_widget();
+        assert!(!widget.mouse_over_component(Point::new(0, 0)));
+        assert!(!widget.mouse_over_component(Point::new(600, 600)));
+    }
+
+    #[test]
+    fn test_widget_mouse_over_inactive() {
+        let mut widget = make_test_widget();
+        widget.active = false;
+        assert!(!widget.mouse_over_component(Point::new(300, 150)));
+    }
+
+    #[test]
+    fn test_widget_change_labels() {
+        let mut widget = make_test_widget();
+        widget.change_labels(vec!["btn_a"], &vec!["New A"]);
+        let btn = widget.buttons.get("btn_a").unwrap();
+        // StandardButton stores label in .text via change_label
+        // We can verify by downcasting
+        // For now just verify no panic
+    }
+
+    #[test]
+    fn test_widget_on_click_outside() {
+        let mut widget = make_test_widget();
+        let (clicked, _) = widget.on_click(true, Point::new(0, 0));
+        assert!(clicked.is_none());
+    }
+
+    #[test]
+    fn test_widget_invalidate_draw_cache() {
+        let mut widget = make_test_widget();
+        widget.cached_draw_order = Some(vec!["btn_a"]);
+        widget.invalidate_draw_cache();
+        assert!(widget.cached_draw_order.is_none());
+    }
+
+    #[test]
+    fn test_widget_with_single_button() {
+        let buttons: HashMap<&'static str, Box<dyn Interface>> =
+            HashMap::from([("only", make_button("only"))]);
+        let layout = vec![vec!["only"]];
+        let widget = Widget {
+            location: Point::new(0, 0),
+            id: "single".to_string(),
+            result: None,
+            height: 100,
+            width: 100,
+            active: true,
+            buttons,
+            layout,
+            drawn: false,
+            cached_draw_order: None,
+            cached_interface_location: None,
+            important_component_clicked: false,
+        };
+        assert_eq!(widget.buttons.len(), 1);
+        assert_eq!(widget.layout.len(), 1);
+    }
+
+    #[test]
+    fn test_widget_change_active_idempotent() {
+        let mut widget = make_test_widget();
+        widget.change_active(true);
+        widget.change_active(true); // Should not panic or change state
+        assert!(widget.is_active());
+    }
+}

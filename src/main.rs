@@ -859,7 +859,7 @@ pub fn main() {
                 settings.iterations,
                 settings.weight.max(1),
                 settings.gen_mode,
-                false,
+                true,
             );
             run_game_board = false;
         }
@@ -968,7 +968,7 @@ pub fn main() {
                                 board_control_widget.buttons.get_mut("Obstacle_Count")
                             {
                                 if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
-                                    settings.gen_obstacles = sl.value.max(1);
+                                    settings.gen_obstacles = sl.value.max(0);
                                 }
                             };
                         }
@@ -977,7 +977,7 @@ pub fn main() {
                                 board_control_widget.buttons.get_mut("Weighted_Tile_Count")
                             {
                                 if let Some(sl) = slider.as_any().downcast_mut::<Slider>() {
-                                    settings.weight_count = sl.value.max(1);
+                                    settings.weight_count = sl.value.max(0);
                                 }
                             };
                         }
@@ -1086,6 +1086,8 @@ pub fn main() {
                                                     fileDialog::read_file(&new_result),
                                                 );
                                                 select_file = false;
+                                                canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                                canvas.clear();
                                                 game_board.active = true;
                                                 game_board.draw(&mut canvas);
                                             }
@@ -1114,6 +1116,15 @@ pub fn main() {
                     Some(name) => match name.as_str() {
                         "START" => {
                             run_game_board = true;
+
+                            /*let cwd = env::current_dir().unwrap();
+                            let data_path = cwd.join("testing.csv");
+                            benchmarks::run_overall_benchmark(
+                                &benchmarks::default_benchmark_configs(),
+                                &["A* search", "Breadth First Search", "JPSW", "Greedy"],
+                                15,
+                                &data_path,
+                            );*/
                         }
                         "Upload Map" => {
                             game_board.draw(&mut canvas);
@@ -1433,5 +1444,778 @@ pub fn main() {
         if elapsed < TARGET_FRAME_DURATION {
             thread::sleep(TARGET_FRAME_DURATION - elapsed);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::benchmarks::{BenchmarkConfig, PathData};
+    use crate::components::board::{Board, Tile, TileType};
+    use crate::pathfinding::{get_algorithm, get_possible_moves, Agent};
+    use crate::settings::{GameSettings, GenerationMode};
+    use crate::util;
+    use sdl2::pixels::Color;
+    use sdl2::rect::{Point, Rect};
+    use std::cell::RefCell;
+    use std::time::Duration;
+
+    // ==================== ensure_assets tests ====================
+
+    #[test]
+    fn test_ensure_assets_creates_data_directory() {
+        let data_dir = ensure_assets();
+        assert!(
+            data_dir.exists(),
+            "Data directory should exist after ensure_assets"
+        );
+    }
+
+    #[test]
+    fn test_ensure_assets_creates_font_file() {
+        let data_dir = ensure_assets();
+        let font_path = data_dir.join("fonts/OpenSans-Semibold.ttf");
+        assert!(font_path.exists(), "Font file should exist");
+        assert!(
+            font_path.metadata().unwrap().len() > 0,
+            "Font file should not be empty"
+        );
+    }
+
+    #[test]
+    fn test_ensure_assets_creates_icon_file() {
+        let data_dir = ensure_assets();
+        let icon_path = data_dir.join("Icon.svg");
+        assert!(icon_path.exists(), "Icon file should exist");
+        assert!(
+            icon_path.metadata().unwrap().len() > 0,
+            "Icon file should not be empty"
+        );
+    }
+
+    #[test]
+    fn test_ensure_assets_idempotent() {
+        let dir1 = ensure_assets();
+        let dir2 = ensure_assets();
+        assert_eq!(
+            dir1, dir2,
+            "Calling ensure_assets twice should return the same path"
+        );
+    }
+
+    #[test]
+    fn test_embedded_font_bytes_not_empty() {
+        assert!(
+            !FONT_BYTES.is_empty(),
+            "Embedded font bytes must not be empty"
+        );
+    }
+
+    #[test]
+    fn test_embedded_icon_bytes_not_empty() {
+        assert!(
+            !ICON_BYTES.is_empty(),
+            "Embedded icon bytes must not be empty"
+        );
+    }
+
+    // ==================== Settings tests ====================
+
+    #[test]
+    fn test_settings_default_values() {
+        let settings = GameSettings::default();
+        assert_eq!(settings.window_width, 1200);
+        assert_eq!(settings.window_height, 800);
+        assert!(!settings.fullscreen);
+        assert!(!settings.enable_dynamic_generation);
+        assert!(!settings.enable_doubling_experiment);
+        assert!(!settings.enable_multiple_agents);
+        assert!(!settings.enable_multiple_goals);
+        assert!(!settings.enable_random_agents);
+        assert_eq!(settings.selected_algorithm, "Greedy");
+        assert_eq!(settings.tiles_x, 40);
+        assert_eq!(settings.tiles_y, 40);
+        assert_eq!(settings.weight, 1);
+        assert_eq!(settings.iterations, 1);
+    }
+
+    #[test]
+    fn test_settings_save_and_load_roundtrip() {
+        let tmp = std::env::temp_dir().join("test_settings_roundtrip.json");
+        let path = tmp.to_str().unwrap();
+
+        let mut settings = GameSettings::default();
+        settings.window_width = 1920;
+        settings.tiles_x = 100;
+        settings.selected_algorithm = "A* search".to_string();
+        settings.weight = 42;
+        settings.save(path).unwrap();
+
+        let loaded = GameSettings::load(path).unwrap();
+        assert_eq!(loaded.window_width, 1920);
+        assert_eq!(loaded.tiles_x, 100);
+        assert_eq!(loaded.selected_algorithm, "A* search");
+        assert_eq!(loaded.weight, 42);
+
+        std::fs::remove_file(&tmp).ok();
+    }
+
+    #[test]
+    fn test_settings_load_nonexistent_returns_default() {
+        let loaded = GameSettings::load("/tmp/nonexistent_settings_12345.json").unwrap();
+        let default = GameSettings::default();
+        assert_eq!(loaded.window_width, default.window_width);
+        assert_eq!(loaded.tiles_x, default.tiles_x);
+    }
+
+    #[test]
+    fn test_settings_get_default_path_not_empty() {
+        let path = GameSettings::get_default_path();
+        assert!(!path.is_empty());
+        assert!(path.contains("settings.json"));
+    }
+
+    #[test]
+    fn test_settings_serialization_includes_gen_mode() {
+        let settings = GameSettings::default();
+        let json = serde_json::to_string(&settings).unwrap();
+        assert!(json.contains("gen_mode"));
+        assert!(json.contains("Random"));
+    }
+
+    // ==================== Utility function tests ====================
+
+    #[test]
+    fn test_mouse_over_inside() {
+        let rect = Rect::new(10, 10, 100, 100);
+        assert!(util::mouse_over(rect, Point::new(50, 50)));
+    }
+
+    #[test]
+    fn test_mouse_over_outside() {
+        let rect = Rect::new(10, 10, 100, 100);
+        assert!(!util::mouse_over(rect, Point::new(0, 0)));
+        assert!(!util::mouse_over(rect, Point::new(200, 200)));
+    }
+
+    #[test]
+    fn test_mouse_over_on_edge() {
+        let rect = Rect::new(10, 10, 100, 100);
+        assert!(util::mouse_over(rect, Point::new(10, 10)));
+    }
+
+    #[test]
+    fn test_calculate_scaled_font_size_short_text() {
+        let size = util::calculate_scaled_font_size(5, 200);
+        assert!(size >= 4, "Font size should be at least 4");
+        assert_eq!(size, 40); // 5 * 8 = 40 fits within 200
+    }
+
+    #[test]
+    fn test_calculate_scaled_font_size_overflow() {
+        let size = util::calculate_scaled_font_size(50, 100);
+        assert!(size <= 100, "Scaled size should not exceed available width");
+        assert!(size >= 4, "Font size should be at least minimum");
+    }
+
+    #[test]
+    fn test_calculate_scaled_font_size_minimum() {
+        let size = util::calculate_scaled_font_size(0, 100);
+        assert_eq!(size, 4, "Should return minimum font size for empty text");
+    }
+
+    #[test]
+    fn test_get_coordinate_from_idx_first() {
+        let (x, y) = util::get_coordinate_from_idx(0, 10, 10);
+        assert_eq!((x, y), (0, 0));
+    }
+
+    #[test]
+    fn test_get_coordinate_from_idx_mid() {
+        let (x, y) = util::get_coordinate_from_idx(15, 10, 10);
+        assert_eq!((x, y), (5, 1));
+    }
+
+    #[test]
+    fn test_get_coordinate_from_idx_last() {
+        let (x, y) = util::get_coordinate_from_idx(99, 10, 10);
+        assert_eq!((x, y), (9, 9));
+    }
+
+    #[test]
+    fn test_get_idx_from_coordinate_valid() {
+        assert_eq!(util::get_idx_from_coordinate((0, 0), 10, 10), Some(0));
+        assert_eq!(util::get_idx_from_coordinate((5, 1), 10, 10), Some(15));
+        assert_eq!(util::get_idx_from_coordinate((9, 9), 10, 10), Some(99));
+    }
+
+    #[test]
+    fn test_get_idx_from_coordinate_out_of_bounds() {
+        assert_eq!(util::get_idx_from_coordinate((-1, 0), 10, 10), None);
+        assert_eq!(util::get_idx_from_coordinate((0, -1), 10, 10), None);
+        assert_eq!(util::get_idx_from_coordinate((10, 0), 10, 10), None);
+        assert_eq!(util::get_idx_from_coordinate((0, 10), 10, 10), None);
+    }
+
+    #[test]
+    fn test_coordinate_idx_roundtrip() {
+        for idx in 0..100 {
+            let (x, y) = util::get_coordinate_from_idx(idx, 10, 10);
+            let recovered = util::get_idx_from_coordinate((x, y), 10, 10);
+            assert_eq!(recovered, Some(idx));
+        }
+    }
+
+    // ==================== Color constant tests ====================
+
+    #[test]
+    fn test_color_constants() {
+        assert_eq!(RED, Color::RGB(255, 0, 0));
+        assert_eq!(GREEN, Color::RGB(0, 255, 0));
+        assert_eq!(BLACK, Color::RGB(0, 0, 0));
+        assert_eq!(WHITE, Color::RGB(255, 255, 255));
+        assert_eq!(YELLOW, Color::RGB(255, 255, 0));
+    }
+
+    // ==================== TileType tests ====================
+
+    #[test]
+    fn test_tile_type_equality() {
+        assert_eq!(TileType::Obstacle, TileType::Obstacle);
+        assert_eq!(TileType::Floor, TileType::Floor);
+        assert_eq!(TileType::Player, TileType::Player);
+        assert_eq!(TileType::Enemy, TileType::Enemy);
+        assert_eq!(TileType::Weighted(10), TileType::Weighted(10));
+        assert_ne!(TileType::Weighted(10), TileType::Weighted(20));
+        assert_ne!(TileType::Obstacle, TileType::Floor);
+    }
+
+    #[test]
+    fn test_tile_type_serialization() {
+        let types = vec![
+            TileType::Obstacle,
+            TileType::Floor,
+            TileType::Player,
+            TileType::Enemy,
+            TileType::Weighted(128),
+        ];
+        for tt in types {
+            let json = serde_json::to_string(&tt).unwrap();
+            let deserialized: TileType = serde_json::from_str(&json).unwrap();
+            assert_eq!(tt, deserialized);
+        }
+    }
+
+    // ==================== Tile tests ====================
+
+    fn make_floor_tile(pos: (i32, i32)) -> Tile {
+        Tile::new(
+            pos,
+            TileType::Floor,
+            20,
+            20,
+            0,
+            false,
+            Color::RGB(255, 255, 255),
+        )
+    }
+
+    fn make_obstacle_tile(pos: (i32, i32)) -> Tile {
+        Tile::new(
+            pos,
+            TileType::Obstacle,
+            20,
+            20,
+            0,
+            false,
+            Color::RGB(0, 0, 0),
+        )
+    }
+
+    fn make_weighted_tile(pos: (i32, i32), weight: u8) -> Tile {
+        Tile::new(
+            pos,
+            TileType::Weighted(weight),
+            20,
+            20,
+            weight,
+            false,
+            Color::RGB(255, 140, 0),
+        )
+    }
+
+    #[test]
+    fn test_tile_is_traversable() {
+        assert!(make_floor_tile((0, 0)).is_traversable());
+        assert!(!make_obstacle_tile((0, 0)).is_traversable());
+        assert!(make_weighted_tile((0, 0), 10).is_traversable());
+    }
+
+    #[test]
+    fn test_tile_is_floor() {
+        assert!(make_floor_tile((0, 0)).is_floor());
+        assert!(!make_obstacle_tile((0, 0)).is_floor());
+        assert!(!make_weighted_tile((0, 0), 10).is_floor());
+    }
+
+    // ==================== Board tests ====================
+
+    fn make_test_board(width: u32, height: u32, tiles_x: u32, tiles_y: u32) -> Board {
+        Board {
+            location: Point::new(0, 0),
+            width,
+            height,
+            tile_amount_x: tiles_x,
+            tile_amount_y: tiles_y,
+            active: true,
+            id: String::from("test_board"),
+            selected_piece_type: TileType::Obstacle,
+            cached_background: None,
+            cached_grid: RefCell::new(None),
+            multiple_agents: false,
+            multiple_goals: false,
+            agents: vec![],
+            starts: vec![],
+            goals: vec![],
+        }
+    }
+
+    #[test]
+    fn test_board_tile_dimensions() {
+        let board = make_test_board(200, 100, 10, 5);
+        assert_eq!(board.tile_width(), 20);
+        assert_eq!(board.tile_height(), 20);
+    }
+
+    #[test]
+    fn test_board_grid_initialization() {
+        let board = make_test_board(100, 100, 10, 10);
+        let grid = board.grid();
+        assert_eq!(grid.len(), 100);
+    }
+
+    #[test]
+    fn test_board_grid_all_tiles_traversable_by_default() {
+        let board = make_test_board(100, 100, 10, 10);
+        let grid = board.grid();
+        for tile in &grid {
+            assert!(
+                tile.is_traversable(),
+                "All default tiles should be traversable"
+            );
+        }
+    }
+
+    #[test]
+    fn test_board_generate_random_grid() {
+        let mut board = make_test_board(200, 200, 20, 20);
+        board.generate_random_grid(5, 30, 10, false);
+        let grid = board.grid();
+        assert_eq!(grid.len(), 400);
+
+        let obstacles = grid.iter().filter(|t| !t.is_traversable()).count();
+        assert!(obstacles > 0, "Random grid should have some obstacles");
+    }
+
+    #[test]
+    fn test_board_generate_random_grid_with_random_agents() {
+        let mut board = make_test_board(200, 200, 20, 20);
+        board.generate_random_grid(5, 10, 10, true);
+        assert!(!board.starts.is_empty(), "Should place at least one start");
+        assert!(!board.goals.is_empty(), "Should place at least one goal");
+    }
+
+    #[test]
+    fn test_board_generate_city_grid() {
+        let mut board = make_test_board(200, 200, 20, 20);
+        board.generate_organic_city(0, 2, 5, 30.0, 2, 4, false);
+        let grid = board.grid();
+        assert_eq!(grid.len(), 400);
+    }
+
+    #[test]
+    fn test_board_on_click_outside_returns_false() {
+        let mut board = make_test_board(100, 100, 10, 10);
+        let (clicked, _) = board.on_click(Point::new(500, 500));
+        assert!(!clicked);
+    }
+
+    #[test]
+    fn test_board_on_click_inside_returns_true() {
+        let mut board = make_test_board(100, 100, 10, 10);
+        board.active = true;
+        let (clicked, _) = board.on_click(Point::new(5, 5));
+        assert!(clicked);
+    }
+
+    #[test]
+    fn test_board_mouse_over_component() {
+        let board = make_test_board(100, 100, 10, 10);
+        assert!(board.mouse_over_component(Point::new(50, 50)));
+        assert!(!board.mouse_over_component(Point::new(200, 200)));
+    }
+
+    #[test]
+    fn test_board_change_location() {
+        let mut board = make_test_board(100, 100, 10, 10);
+        board.change_location(Point::new(50, 50));
+        assert_eq!(board.get_location(), Point::new(50, 50));
+    }
+
+    #[test]
+    fn test_board_change_active() {
+        let mut board = make_test_board(100, 100, 10, 10);
+        assert!(board.is_active());
+        board.change_active(false);
+        assert!(!board.is_active());
+    }
+
+    #[test]
+    fn test_board_save_and_load_roundtrip() {
+        let tmp_dir = std::env::temp_dir();
+        let mut board = make_test_board(100, 100, 10, 10);
+        board.generate_random_grid(5, 20, 10, true);
+
+        let save_path = tmp_dir.to_str().unwrap();
+        board
+            .save_to_file(save_path, "test_board_roundtrip")
+            .unwrap();
+
+        let file_path = tmp_dir.join("test_board_roundtrip.json");
+        let json = std::fs::read_to_string(&file_path).unwrap();
+        let loaded = board.load_board_file(json);
+
+        assert_eq!(loaded.tile_amount_x, board.tile_amount_x);
+        assert_eq!(loaded.tile_amount_y, board.tile_amount_y);
+        assert_eq!(loaded.grid().len(), board.grid().len());
+
+        std::fs::remove_file(&file_path).ok();
+    }
+
+    // ==================== Pathfinding tests ====================
+
+    fn make_open_grid(w: u32, h: u32) -> Vec<Tile> {
+        (0..(w * h))
+            .map(|i| {
+                let x = (i % w) as i32;
+                let y = (i / w) as i32;
+                make_floor_tile((x, y))
+            })
+            .collect()
+    }
+
+    fn make_grid_with_wall(w: u32, h: u32) -> Vec<Tile> {
+        let mut grid = make_open_grid(w, h);
+        // Vertical wall at x=5, leaving a gap at y=0
+        for y in 1..h as i32 {
+            let idx = (y as u32 * w + 5) as usize;
+            grid[idx] = make_obstacle_tile((5, y));
+        }
+        grid
+    }
+
+    #[test]
+    fn test_get_possible_moves_center() {
+        let grid = make_open_grid(10, 10);
+        let moves = get_possible_moves((5, 5), &grid, 10, 10);
+        assert_eq!(moves.len(), 8, "Center tile should have 8 neighbors");
+    }
+
+    #[test]
+    fn test_get_possible_moves_corner() {
+        let grid = make_open_grid(10, 10);
+        let moves = get_possible_moves((0, 0), &grid, 10, 10);
+        assert_eq!(moves.len(), 3, "Top-left corner should have 3 neighbors");
+    }
+
+    #[test]
+    fn test_get_possible_moves_edge() {
+        let grid = make_open_grid(10, 10);
+        let moves = get_possible_moves((0, 5), &grid, 10, 10);
+        assert_eq!(moves.len(), 5, "Left edge tile should have 5 neighbors");
+    }
+
+    #[test]
+    fn test_get_possible_moves_blocked() {
+        let mut grid = make_open_grid(3, 3);
+        // Surround center with obstacles
+        for i in [0, 1, 2, 3, 5, 6, 7, 8] {
+            let x = (i % 3) as i32;
+            let y = (i / 3) as i32;
+            grid[i] = make_obstacle_tile((x, y));
+        }
+        let moves = get_possible_moves((1, 1), &grid, 3, 3);
+        assert_eq!(
+            moves.len(),
+            0,
+            "Fully surrounded tile should have 0 neighbors"
+        );
+    }
+
+    #[test]
+    fn test_greedy_finds_path_open_grid() {
+        let grid = make_open_grid(10, 10);
+        let algo = get_algorithm("Greedy");
+        let (path, _cost) = algo.find_path((0, 0), (9, 9), &grid, 10, 10);
+        assert!(!path.is_empty(), "Greedy should find a path on open grid");
+        assert_eq!(*path.last().unwrap(), (0, 0));
+        assert_eq!(path[0], (9, 9));
+    }
+
+    #[test]
+    fn test_bfs_finds_path_open_grid() {
+        let grid = make_open_grid(10, 10);
+        let algo = get_algorithm("Breadth First Search");
+        let (path, _cost) = algo.find_path((0, 0), (9, 9), &grid, 10, 10);
+        assert!(!path.is_empty(), "BFS should find a path on open grid");
+        assert_eq!(path[0], (9, 9));
+    }
+
+    #[test]
+    fn test_astar_finds_path_open_grid() {
+        let grid = make_open_grid(10, 10);
+        let algo = get_algorithm("A* search");
+        let (path, _cost) = algo.find_path((0, 0), (9, 9), &grid, 10, 10);
+        assert!(!path.is_empty(), "A* should find a path on open grid");
+        assert_eq!(path[0], (9, 9));
+    }
+
+    #[test]
+    fn test_jpsw_finds_path_open_grid() {
+        let grid = make_open_grid(10, 10);
+        let algo = get_algorithm("JPSW");
+        let (path, _cost) = algo.find_path((0, 0), (9, 9), &grid, 10, 10);
+        assert!(!path.is_empty(), "JPSW should find a path on open grid");
+        assert_eq!(path[0], (9, 9));
+    }
+
+    #[test]
+    fn test_algorithms_find_path_around_wall() {
+        let grid = make_grid_with_wall(10, 10);
+        // Greedy is excluded: it uses random fallback moves and may not reliably
+        // navigate around walls within the step limit.
+        for name in &["Breadth First Search", "A* search", "JPSW"] {
+            let algo = get_algorithm(name);
+            let (path, _cost) = algo.find_path((0, 5), (9, 5), &grid, 10, 10);
+            assert!(
+                !path.is_empty(),
+                "{} should find a path around the wall",
+                name
+            );
+            assert_eq!(path[0], (9, 5));
+        }
+    }
+
+    #[test]
+    fn test_algorithms_no_path_when_blocked() {
+        let mut grid = make_open_grid(5, 5);
+        // Complete vertical wall at x=2
+        for y in 0..5i32 {
+            let idx = (y * 5 + 2) as usize;
+            grid[idx] = make_obstacle_tile((2, y));
+        }
+        for name in &["Breadth First Search", "A* search"] {
+            let algo = get_algorithm(name);
+            let (path, _cost) = algo.find_path((0, 0), (4, 4), &grid, 5, 5);
+            assert!(
+                path.is_empty(),
+                "{} should return empty path when goal is unreachable",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn test_agent_goal_reached() {
+        let mut agent = Agent {
+            start: (0, 0),
+            goal: (5, 5),
+            position: (0, 0),
+            path: vec![],
+        };
+        assert!(!agent.goal_reached());
+        agent.position = (5, 5);
+        assert!(agent.goal_reached());
+    }
+
+    #[test]
+    fn test_agent_is_path_possible() {
+        let grid = make_open_grid(10, 10);
+        let agent = Agent {
+            start: (0, 0),
+            goal: (9, 9),
+            position: (0, 0),
+            path: vec![],
+        };
+        assert!(agent.is_path_possible(&grid, 10, 10));
+    }
+
+    #[test]
+    fn test_agent_path_impossible_when_blocked() {
+        let mut grid = make_open_grid(5, 5);
+        for y in 0..5i32 {
+            let idx = (y * 5 + 2) as usize;
+            grid[idx] = make_obstacle_tile((2, y));
+        }
+        let agent = Agent {
+            start: (0, 0),
+            goal: (4, 4),
+            position: (0, 0),
+            path: vec![],
+        };
+        assert!(!agent.is_path_possible(&grid, 5, 5));
+    }
+
+    // ==================== PathData / Benchmarks tests ====================
+
+    #[test]
+    fn test_path_data_update_and_averages() {
+        let mut pd = PathData {
+            wcf: vec![],
+            memory: vec![],
+            time: vec![],
+            steps: vec![],
+            path_cost: vec![],
+        };
+        pd.update_all(1.0, 100, Duration::from_millis(10), 50, 20);
+        pd.update_all(3.0, 300, Duration::from_millis(30), 150, 60);
+
+        assert!((pd.avg_wcf() - 2.0).abs() < f64::EPSILON);
+        assert_eq!(pd.avg_memory(), 200);
+        assert_eq!(pd.avg_steps(), 100);
+        assert_eq!(pd.avg_path_cost(), 40);
+        assert_eq!(pd.avg_time(), Duration::from_millis(20));
+    }
+
+    #[test]
+    fn test_default_benchmark_configs() {
+        let configs = benchmarks::default_benchmark_configs();
+        assert!(!configs.is_empty());
+        for cfg in &configs {
+            assert!(cfg.grid_size > 0);
+            assert!(cfg.obstacle_pct <= 100);
+            assert!(cfg.weighted_pct <= 100);
+        }
+    }
+
+    #[test]
+    fn test_sobel_method_uniform_grid() {
+        let grid = make_open_grid(10, 10);
+        let wcf = benchmarks::sobel_method(&grid, 10, 10);
+        // A uniform grid should have a low WCF (no weight variation)
+        assert!(wcf >= 0.0, "WCF should be non-negative");
+    }
+
+    #[test]
+    fn test_sobel_method_weighted_grid() {
+        let mut grid = make_open_grid(10, 10);
+        // Add some weighted tiles to create variation
+        for i in (0..100).step_by(3) {
+            let x = (i % 10) as i32;
+            let y = (i / 10) as i32;
+            grid[i] = make_weighted_tile((x, y), 200);
+        }
+        let wcf = benchmarks::sobel_method(&grid, 10, 10);
+        assert!(wcf >= 0.0, "WCF should be non-negative for weighted grid");
+    }
+
+    // ==================== fileDialog tests ====================
+
+    #[test]
+    fn test_is_directory() {
+        assert!(fileDialog::is_directory("/tmp"));
+        assert!(!fileDialog::is_directory(
+            "/tmp/nonexistent_file_abc123.txt"
+        ));
+    }
+
+    #[test]
+    fn test_get_current_directory() {
+        let cwd = fileDialog::get_current_directory();
+        assert!(cwd.exists());
+        assert!(cwd.is_dir());
+    }
+
+    #[test]
+    fn test_file_save_and_read_roundtrip() {
+        let tmp_dir = std::env::temp_dir().join("test_file_dialog_roundtrip_dir");
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let content = "hello, pathmaker!".to_string();
+        fileDialog::save_file(tmp_dir.to_str().unwrap().to_string(), content.clone());
+        let actual_file = tmp_dir.join("test.json");
+        let read_back = fileDialog::read_file(actual_file.to_str().unwrap());
+        assert_eq!(read_back, content);
+        std::fs::remove_dir_all(&tmp_dir).ok();
+    }
+
+    // ==================== Integration-style tests ====================
+
+    #[test]
+    fn test_board_generate_then_pathfind() {
+        let mut board = make_test_board(200, 200, 20, 20);
+        board.generate_random_grid(5, 10, 5, true);
+
+        let grid = board.grid();
+        let starts = &board.starts;
+        let goals = &board.goals;
+
+        if !starts.is_empty() && !goals.is_empty() {
+            let start_pos = util::get_coordinate_from_idx(starts[0], 20, 20);
+            let goal_pos = util::get_coordinate_from_idx(goals[0], 20, 20);
+            let algo = get_algorithm("A* search");
+            let (path, _) = algo.find_path(start_pos, goal_pos, &grid, 20, 20);
+            // Path may or may not exist depending on random generation; just verify no panic
+            let _ = path;
+        }
+    }
+
+    #[test]
+    fn test_board_multiple_agents_mode() {
+        let mut board = make_test_board(200, 200, 20, 20);
+        board.multiple_agents = true;
+        board.generate_random_grid(5, 5, 5, true);
+        // With multiple agents enabled and random agents, should place multiple starts
+        // (depends on random generation, but should not panic)
+        let _ = board.grid();
+    }
+
+    #[test]
+    fn test_all_algorithms_consistent_on_simple_path() {
+        let grid = make_open_grid(10, 10);
+        let start = (0, 0);
+        let goal = (9, 0); // Straight horizontal path
+
+        let mut paths = Vec::new();
+        for name in &["Greedy", "Breadth First Search", "A* search", "JPSW"] {
+            let algo = get_algorithm(name);
+            let (path, _cost) = algo.find_path(start, goal, &grid, 10, 10);
+            assert!(!path.is_empty(), "{} should find the path", name);
+            assert_eq!(*path.last().unwrap(), start);
+            assert_eq!(path[0], goal);
+            paths.push((name, path));
+        }
+    }
+
+    #[test]
+    fn test_weighted_tiles_affect_path_cost() {
+        let mut grid = make_open_grid(10, 10);
+        // Add heavy weights on the direct diagonal path
+        for i in 1..9 {
+            let idx = i * 10 + i;
+            grid[idx] = make_weighted_tile((i as i32, i as i32), 200);
+        }
+        let algo = get_algorithm("A* search");
+        let (path_weighted, cost_weighted) = algo.find_path((0, 0), (9, 9), &grid, 10, 10);
+        assert!(!path_weighted.is_empty());
+
+        let grid_open = make_open_grid(10, 10);
+        let (path_open, cost_open) = algo.find_path((0, 0), (9, 9), &grid_open, 10, 10);
+        assert!(!path_open.is_empty());
+
+        // The weighted grid path should cost more or take a detour
+        assert!(
+            cost_weighted >= cost_open,
+            "Path through weighted tiles should cost at least as much"
+        );
     }
 }

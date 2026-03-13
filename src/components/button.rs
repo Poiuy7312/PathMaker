@@ -15,6 +15,7 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 
 use sdl2::mouse::MouseState;
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -118,7 +119,6 @@ pub struct InterfaceStyle {
     /// Background fill color
     pub background_color: Color,
 }
-
 /// A simple clickable button with text.
 ///
 /// Renders as a rectangle with centered text. Supports hover effects
@@ -357,6 +357,16 @@ impl ValidDropdownOption for StandardButton {
 impl PartialEq for StandardButton {
     fn eq(&self, other: &Self) -> bool {
         self.location == other.location
+    }
+}
+
+impl fmt::Debug for StandardButton {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{},{:#?},{},{}",
+            self.id, self.location, self.height, self.width
+        )
     }
 }
 
@@ -1522,5 +1532,591 @@ impl Slider {
         self.value = ((relative_location as f32 * ratio) as u32)
             .max(0)
             .min(self.range);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sdl2::pixels::Color;
+    use sdl2::rect::Point;
+    use std::cell::RefCell;
+
+    fn make_standard_button(x: i32, y: i32, w: u32, h: u32) -> StandardButton {
+        StandardButton {
+            height: h,
+            width: w,
+            location: Point::new(x, y),
+            text_color: WHITE,
+            background_color: PRIMARY_COLOR,
+            hover: RefCell::new(false),
+            text: "Test".to_string(),
+            id: "test_btn".to_string(),
+            filter: None,
+            active: true,
+            drawn: RefCell::new(false),
+            cached_texture: None,
+        }
+    }
+
+    fn make_checkbox(x: i32, y: i32, w: u32, h: u32) -> CheckBox {
+        CheckBox {
+            label: "Test Check".to_string(),
+            checked: false,
+            location: Point::new(x, y),
+            height: h,
+            width: w,
+            id: "test_cb".to_string(),
+            active: true,
+            drawn: RefCell::new(false),
+        }
+    }
+
+    fn make_slider(x: i32, y: i32, w: u32, h: u32, range: u32) -> Slider {
+        Slider {
+            height: h,
+            width: w,
+            location: Point::new(x, y),
+            text_color: BLACK,
+            background_color: SECONDARY_COLOR,
+            text: "Test Slider".to_string(),
+            id: "test_slider".to_string(),
+            active: true,
+            range,
+            slider_offset_axis: x,
+            drawn: RefCell::new(false),
+            cached_texture: None,
+            value: 0,
+            is_vertical: false,
+            minimal: false,
+        }
+    }
+
+    fn make_dropdown(x: i32, y: i32, w: u32, h: u32) -> Dropdown {
+        Dropdown {
+            height: h,
+            width: w,
+            location: Point::new(x, y),
+            text_color: WHITE,
+            background_color: PRIMARY_COLOR,
+            hover: RefCell::new(false),
+            text: "Option A".to_string(),
+            id: "test_dd".to_string(),
+            active: true,
+            clicked_on: false,
+            options: RefCell::new(vec![StandardButton {
+                height: h,
+                width: w,
+                location: Point::new(x, y + h as i32),
+                text_color: WHITE,
+                background_color: PRIMARY_COLOR,
+                hover: RefCell::new(false),
+                text: "Option B".to_string(),
+                id: "Option B".to_string(),
+                filter: None,
+                active: true,
+                drawn: RefCell::new(false),
+                cached_texture: None,
+            }]),
+            filter: None,
+            drawn: RefCell::new(false),
+        }
+    }
+
+    // ==================== StandardButton tests ====================
+
+    #[test]
+    fn test_standard_button_get_id() {
+        let btn = make_standard_button(0, 0, 100, 50);
+        assert_eq!(btn.get_id(), "test_btn");
+    }
+
+    #[test]
+    fn test_standard_button_mouse_over_inside() {
+        let btn = make_standard_button(10, 10, 100, 50);
+        assert!(btn.mouse_over_component(Point::new(50, 30)));
+    }
+
+    #[test]
+    fn test_standard_button_mouse_over_outside() {
+        let btn = make_standard_button(10, 10, 100, 50);
+        assert!(!btn.mouse_over_component(Point::new(200, 200)));
+    }
+
+    #[test]
+    fn test_standard_button_mouse_over_inactive() {
+        let mut btn = make_standard_button(10, 10, 100, 50);
+        btn.active = false;
+        assert!(!btn.mouse_over_component(Point::new(50, 30)));
+    }
+
+    #[test]
+    fn test_standard_button_on_click_inside() {
+        let mut btn = make_standard_button(10, 10, 100, 50);
+        let (clicked, id) = btn.on_click(Point::new(50, 30));
+        assert!(clicked);
+        assert_eq!(id, Some("test_btn".to_string()));
+    }
+
+    #[test]
+    fn test_standard_button_on_click_outside() {
+        let mut btn = make_standard_button(10, 10, 100, 50);
+        let (clicked, _) = btn.on_click(Point::new(200, 200));
+        assert!(!clicked);
+    }
+
+    #[test]
+    fn test_standard_button_change_location() {
+        let mut btn = make_standard_button(0, 0, 100, 50);
+        btn.change_location(Point::new(50, 50));
+        assert_eq!(btn.get_location(), Point::new(50, 50));
+    }
+
+    #[test]
+    fn test_standard_button_change_dimensions() {
+        let mut btn = make_standard_button(0, 0, 100, 50);
+        btn.change_width(200);
+        btn.change_height(75);
+        assert_eq!(btn.get_width(), 200);
+        assert_eq!(btn.get_height(), 75);
+    }
+
+    #[test]
+    fn test_standard_button_change_active() {
+        let mut btn = make_standard_button(0, 0, 100, 50);
+        assert!(btn.is_active());
+        btn.change_active(false);
+        assert!(!btn.is_active());
+    }
+
+    #[test]
+    fn test_standard_button_change_label() {
+        let mut btn = make_standard_button(0, 0, 100, 50);
+        btn.change_label("New Label".to_string());
+        assert_eq!(btn.text, "New Label");
+    }
+
+    #[test]
+    fn test_standard_button_drawn_state() {
+        let btn = make_standard_button(0, 0, 100, 50);
+        assert!(!btn.is_drawn());
+        btn.change_drawn(true);
+        assert!(btn.is_drawn());
+        btn.change_drawn(false);
+        assert!(!btn.is_drawn());
+    }
+
+    #[test]
+    fn test_standard_button_get_rect() {
+        let btn = make_standard_button(10, 20, 100, 50);
+        let rect = btn.get_rect(Point::new(10, 20));
+        assert_eq!(rect.x(), 10);
+        assert_eq!(rect.y(), 20);
+        assert_eq!(rect.width(), 100);
+        assert_eq!(rect.height(), 50);
+    }
+
+    #[test]
+    fn test_standard_button_contains_no_filter() {
+        let btn = make_standard_button(0, 0, 100, 50);
+        assert!(btn.contains(None));
+    }
+
+    #[test]
+    fn test_standard_button_contains_matching_filter() {
+        let mut btn = make_standard_button(0, 0, 100, 50);
+        btn.id = "Upload Map".to_string();
+        assert!(btn.contains(Some("Upload")));
+        assert!(btn.contains(Some("Map")));
+    }
+
+    #[test]
+    fn test_standard_button_contains_non_matching_filter() {
+        let mut btn = make_standard_button(0, 0, 100, 50);
+        btn.id = "Upload Map".to_string();
+        assert!(!btn.contains(Some("Download")));
+    }
+
+    #[test]
+    fn test_standard_button_layout() {
+        let mut btn = make_standard_button(0, 0, 100, 50);
+        let used = btn.layout(Point::new(10, 20), 200, 30);
+        assert_eq!(used, 1);
+        assert_eq!(btn.location, Point::new(10, 20));
+        assert_eq!(btn.width, 200);
+        assert_eq!(btn.height, 30);
+    }
+
+    #[test]
+    fn test_standard_button_equality() {
+        let btn1 = make_standard_button(10, 20, 100, 50);
+        let btn2 = make_standard_button(10, 20, 200, 75);
+        assert_eq!(btn1, btn2); // Equality is by location only
+    }
+
+    #[test]
+    fn test_standard_button_inequality() {
+        let btn1 = make_standard_button(10, 20, 100, 50);
+        let btn2 = make_standard_button(30, 40, 100, 50);
+        assert_ne!(btn1, btn2);
+    }
+
+    #[test]
+    fn test_standard_button_interface_traits() {
+        let btn = make_standard_button(0, 0, 100, 50);
+        assert!(!btn.is_static());
+        assert!(!btn.has_indent());
+        assert_eq!(btn.draw_priority(), 1);
+        assert!(!btn.dirty_parent());
+        assert!(!btn.important_component_clicked());
+        assert!(!btn.deactivate_parent());
+        assert!(btn.after_click());
+    }
+
+    // ==================== CheckBox tests ====================
+
+    #[test]
+    fn test_checkbox_toggle() {
+        let mut cb = make_checkbox(0, 0, 100, 30);
+        assert!(!cb.checked);
+        cb.on_click(Point::new(50, 15));
+        assert!(cb.checked);
+        cb.on_click(Point::new(50, 15));
+        assert!(!cb.checked);
+    }
+
+    #[test]
+    fn test_checkbox_click_outside() {
+        let mut cb = make_checkbox(0, 0, 100, 30);
+        let (clicked, _) = cb.on_click(Point::new(200, 200));
+        assert!(!clicked);
+        assert!(!cb.checked);
+    }
+
+    #[test]
+    fn test_checkbox_inactive_ignores_click() {
+        let mut cb = make_checkbox(0, 0, 100, 30);
+        cb.change_active(false);
+        let (clicked, _) = cb.on_click(Point::new(50, 15));
+        assert!(!clicked);
+        assert!(!cb.checked);
+    }
+
+    #[test]
+    fn test_checkbox_get_id() {
+        let cb = make_checkbox(0, 0, 100, 30);
+        assert_eq!(cb.get_id(), "test_cb");
+    }
+
+    #[test]
+    fn test_checkbox_change_label() {
+        let mut cb = make_checkbox(0, 0, 100, 30);
+        cb.change_label("New Label".to_string());
+        assert_eq!(cb.label, "New Label");
+    }
+
+    #[test]
+    fn test_checkbox_change_location() {
+        let mut cb = make_checkbox(0, 0, 100, 30);
+        cb.change_location(Point::new(20, 40));
+        assert_eq!(cb.get_location(), Point::new(20, 40));
+    }
+
+    #[test]
+    fn test_checkbox_interface_traits() {
+        let cb = make_checkbox(0, 0, 100, 30);
+        assert!(!cb.is_static());
+        assert!(!cb.has_indent());
+        assert_eq!(cb.draw_priority(), 1);
+        assert!(!cb.dirty_parent());
+        assert!(!cb.important_component_clicked());
+        assert!(!cb.deactivate_parent());
+        assert!(cb.after_click());
+    }
+
+    // ==================== Slider tests ====================
+
+    #[test]
+    fn test_slider_initial_value() {
+        let slider = make_slider(0, 0, 200, 40, 100);
+        assert_eq!(slider.value, 0);
+    }
+
+    #[test]
+    fn test_slider_horizontal_value_at_start() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        slider.change_slider_value_horizontal(Point::new(0, 20));
+        assert_eq!(slider.value, 0);
+    }
+
+    #[test]
+    fn test_slider_horizontal_value_at_end() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        slider.change_slider_value_horizontal(Point::new(200, 20));
+        assert_eq!(slider.value, 100);
+    }
+
+    #[test]
+    fn test_slider_horizontal_value_midpoint() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        slider.change_slider_value_horizontal(Point::new(100, 20));
+        assert!(
+            slider.value >= 40 && slider.value <= 60,
+            "Midpoint value {} should be near 50",
+            slider.value
+        );
+    }
+
+    #[test]
+    fn test_slider_vertical_value_at_start() {
+        let mut slider = make_slider(0, 0, 20, 200, 100);
+        slider.is_vertical = true;
+        slider.change_slider_value_vertical(Point::new(10, 0));
+        assert_eq!(slider.value, 0);
+    }
+
+    #[test]
+    fn test_slider_vertical_value_at_end() {
+        let mut slider = make_slider(0, 0, 20, 200, 100);
+        slider.is_vertical = true;
+        slider.change_slider_value_vertical(Point::new(10, 200));
+        assert_eq!(slider.value, 100);
+    }
+
+    #[test]
+    fn test_slider_on_click_inside() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        let (clicked, id) = slider.on_click(Point::new(100, 20));
+        assert!(clicked);
+        assert_eq!(id, Some("test_slider".to_string()));
+    }
+
+    #[test]
+    fn test_slider_on_click_outside() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        let (clicked, _) = slider.on_click(Point::new(300, 300));
+        assert!(!clicked);
+    }
+
+    #[test]
+    fn test_slider_on_click_inactive() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        slider.change_active(false);
+        let (clicked, _) = slider.on_click(Point::new(100, 20));
+        assert!(!clicked);
+    }
+
+    #[test]
+    fn test_slider_change_label() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        slider.change_label("New Label".to_string());
+        assert_eq!(slider.text, "New Label");
+    }
+
+    #[test]
+    fn test_slider_interface_traits() {
+        let slider = make_slider(0, 0, 200, 40, 100);
+        assert!(!slider.is_static());
+        assert!(!slider.has_indent());
+        assert_eq!(slider.draw_priority(), 1);
+        assert!(!slider.dirty_parent());
+        assert!(!slider.important_component_clicked());
+        assert!(!slider.deactivate_parent());
+        assert!(!slider.after_click()); // Slider processes on mouse-down
+    }
+
+    #[test]
+    fn test_slider_value_clamped_to_range() {
+        let mut slider = make_slider(0, 0, 200, 40, 50);
+        slider.change_slider_value_horizontal(Point::new(500, 20));
+        assert!(
+            slider.value <= 50,
+            "Value {} should not exceed range 50",
+            slider.value
+        );
+    }
+
+    // ==================== Dropdown tests ====================
+
+    #[test]
+    fn test_dropdown_get_id() {
+        let dd = make_dropdown(0, 0, 200, 30);
+        assert_eq!(dd.get_id(), "test_dd");
+    }
+
+    #[test]
+    fn test_dropdown_click_toggles_open() {
+        let mut dd = make_dropdown(0, 0, 200, 30);
+        assert!(!dd.clicked_on);
+        dd.on_click(Point::new(100, 15));
+        assert!(dd.clicked_on);
+        dd.on_click(Point::new(100, 15));
+        assert!(!dd.clicked_on);
+    }
+
+    #[test]
+    fn test_dropdown_click_outside_when_closed() {
+        let mut dd = make_dropdown(0, 0, 200, 30);
+        let (clicked, _) = dd.on_click(Point::new(300, 300));
+        assert!(!clicked);
+        assert!(!dd.clicked_on);
+    }
+
+    #[test]
+    fn test_dropdown_interface_traits() {
+        let dd = make_dropdown(0, 0, 200, 30);
+        assert!(dd.is_static());
+        assert!(!dd.has_indent());
+        assert_eq!(dd.draw_priority(), 2);
+        assert!(dd.dirty_parent());
+        assert!(dd.deactivate_parent());
+        assert!(dd.after_click());
+    }
+
+    #[test]
+    fn test_dropdown_contains_no_filter() {
+        let dd = make_dropdown(0, 0, 200, 30);
+        assert!(dd.contains(None));
+    }
+
+    #[test]
+    fn test_dropdown_contains_matching_self() {
+        let mut dd = make_dropdown(0, 0, 200, 30);
+        dd.id = "Path_Selector".to_string();
+        assert!(dd.contains(Some("Path")));
+    }
+
+    #[test]
+    fn test_dropdown_contains_matching_child() {
+        let dd = make_dropdown(0, 0, 200, 30);
+        assert!(dd.contains(Some("Option B")));
+    }
+
+    #[test]
+    fn test_dropdown_change_active_cascades() {
+        let mut dd = make_dropdown(0, 0, 200, 30);
+        dd.change_active(false);
+        assert!(!dd.is_active());
+        for opt in dd.options.borrow().iter() {
+            assert!(!opt.is_active());
+        }
+    }
+
+    #[test]
+    fn test_dropdown_change_label() {
+        let mut dd = make_dropdown(0, 0, 200, 30);
+        dd.change_label("New Selection".to_string());
+        assert_eq!(dd.text, "New Selection");
+    }
+
+    // ==================== OptionButton tests ====================
+
+    fn make_option_button() -> OptionButton {
+        OptionButton::new(
+            30,
+            200,
+            Point::new(0, 0),
+            "test_option".to_string(),
+            true,
+            vec![
+                (
+                    "Alpha".to_string(),
+                    InterfaceStyle {
+                        text_color: BLACK,
+                        background_color: Color::RGB(255, 0, 0),
+                    },
+                ),
+                (
+                    "Beta".to_string(),
+                    InterfaceStyle {
+                        text_color: BLACK,
+                        background_color: Color::RGB(0, 255, 0),
+                    },
+                ),
+                (
+                    "Gamma".to_string(),
+                    InterfaceStyle {
+                        text_color: BLACK,
+                        background_color: Color::RGB(0, 0, 255),
+                    },
+                ),
+            ],
+            false,
+        )
+    }
+
+    #[test]
+    fn test_option_button_creation() {
+        let ob = make_option_button();
+        assert_eq!(ob.get_id(), "test_option");
+        assert_eq!(ob.options.borrow().len(), 3);
+    }
+
+    #[test]
+    fn test_option_button_click_selects_option() {
+        let mut ob = make_option_button();
+        let (clicked, selected) = ob.on_click(Point::new(30, 15));
+        assert!(clicked);
+        assert_eq!(selected, Some("Alpha".to_string()));
+    }
+
+    #[test]
+    fn test_option_button_click_second_option() {
+        let mut ob = make_option_button();
+        let (clicked, selected) = ob.on_click(Point::new(90, 15));
+        assert!(clicked);
+        assert_eq!(selected, Some("Beta".to_string()));
+    }
+
+    #[test]
+    fn test_option_button_click_outside() {
+        let mut ob = make_option_button();
+        let (clicked, _) = ob.on_click(Point::new(300, 300));
+        assert!(!clicked);
+    }
+
+    #[test]
+    fn test_option_button_change_width_redistributes() {
+        let mut ob = make_option_button();
+        ob.change_width(300);
+        assert_eq!(ob.get_width(), 300);
+        for (_, btn) in ob.options.borrow().iter() {
+            assert_eq!(btn.get_width(), 100);
+        }
+    }
+
+    #[test]
+    fn test_option_button_change_height_cascades() {
+        let mut ob = make_option_button();
+        ob.change_height(50);
+        assert_eq!(ob.get_height(), 50);
+        for (_, btn) in ob.options.borrow().iter() {
+            assert_eq!(btn.get_height(), 50);
+        }
+    }
+
+    #[test]
+    fn test_option_button_change_location_cascades() {
+        let mut ob = make_option_button();
+        ob.change_location(Point::new(100, 200));
+        assert_eq!(ob.get_location(), Point::new(100, 200));
+        let opts = ob.options.borrow();
+        let btn_width = opts[0].1.width as i32;
+        for (i, (_, btn)) in opts.iter().enumerate() {
+            assert_eq!(btn.get_location().x(), 100 + i as i32 * btn_width);
+            assert_eq!(btn.get_location().y(), 200);
+        }
+    }
+
+    #[test]
+    fn test_option_button_interface_traits() {
+        let ob = make_option_button();
+        assert!(!ob.is_static());
+        assert!(!ob.has_indent());
+        assert_eq!(ob.draw_priority(), 1);
+        assert!(!ob.dirty_parent());
+        assert!(!ob.important_component_clicked());
+        assert!(!ob.deactivate_parent());
+        assert!(ob.after_click());
     }
 }

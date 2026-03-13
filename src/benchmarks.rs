@@ -14,14 +14,16 @@
 //! Benchmark results are serialized to JSON with both individual run data
 //! and computed aggregates (averages and totals).
 
-use std::fmt;
-use std::{collections::HashMap, time::Duration};
+use std::path::PathBuf;
+use std::time::Duration;
+use std::{collections::HashMap, fmt, thread};
 
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
-use serde_json::{self, json};
 
-use crate::components::board::{self, Board, Tile};
+use crate::components::board::{Board, Tile, TileType};
+use crate::pathfinding::Agent;
+use crate::util;
 
 /// Container for pathfinding benchmark data.
 ///
@@ -174,7 +176,7 @@ impl fmt::Display for PathData {
 ///
 /// # Returns
 /// Normalized complexity factor (0.0 to 1.0, higher = more uniform)
-pub fn sobel_method(grid: &HashMap<(i32, i32), Tile>) -> f64 {
+pub fn sobel_method(grid: &Vec<Tile>, width: u32, height: u32) -> f64 {
     // Sobel kernels for edge detection in X and Y directions
     const X_KERNEL: [[i32; 3]; 3] = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
     const Y_KERNEL: [[i32; 3]; 3] = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
@@ -182,12 +184,18 @@ pub fn sobel_method(grid: &HashMap<(i32, i32), Tile>) -> f64 {
     /// Weight factor for complexity calculation
     const WEIGHT_FACTOR: f64 = 0.01;
 
-    let traversable_count = grid.values().filter(|a| a.is_floor()).count() as f64;
+    let traversable_count = grid.iter().filter(|a| a.is_traversable()).count() as f64;
 
     let mut c_value: f64 = 0.0;
 
-    // Iterate grid directly instead of using coordinates
-    for (&(c, r), _) in grid.iter() {
+    for idx in 0..grid.len() {
+        let c = (idx % width as usize) as i32;
+        let r = (idx / width as usize) as i32;
+
+        if !grid[idx].is_traversable() {
+            continue;
+        }
+
         let mut weight_conv_x = 0;
         let mut weight_conv_y = 0;
 
@@ -203,18 +211,15 @@ pub fn sobel_method(grid: &HashMap<(i32, i32), Tile>) -> f64 {
             (0, 1),
             (1, 1),
         ];
-        if let Some(tile) = grid.get(&(c, r)) {
-            if !tile.is_floor() {
-                continue;
-            }
-        }
 
-        for (idx, &(dc, dr)) in deltas.iter().enumerate() {
+        for (di, &(dc, dr)) in deltas.iter().enumerate() {
             let neighbor_pos = (c + dc, r + dr);
-            if let Some(tile) = grid.get(&neighbor_pos) {
+            if let Some(tile) =
+                util::get_idx_from_coordinate(neighbor_pos, width, height).and_then(|i| grid.get(i))
+            {
                 if tile.is_floor() {
-                    let col = (idx % 3) as usize;
-                    let row = (idx / 3) as usize;
+                    let col = di % 3;
+                    let row = di / 3;
                     let weight = tile.weight as i32;
                     weight_conv_x += weight * X_KERNEL[row][col];
                     weight_conv_y += weight * Y_KERNEL[row][col];
@@ -232,12 +237,203 @@ pub fn sobel_method(grid: &HashMap<(i32, i32), Tile>) -> f64 {
     return c_value / traversable_count;
 }
 
-//pub fn run_overall_benchmark() {}
+#[derive(Copy, Clone)]
+/// Configuration for a single benchmark scenario.
+pub struct BenchmarkConfig {
+    /// Grid width/height in tiles
+    pub grid_size: u32,
+    /// Obstacle percentage (0-100)
+    pub obstacle_pct: u32,
+    /// Weighted tile percentage (0-100)
+    pub weighted_pct: u32,
+    /// Max weight value for weighted tiles
+    pub weight_range: u8,
+}
+
+/// Returns a default set of benchmark configurations that sweep across
+/// grid sizes, obstacle densities, weighted-tile densities, and weight ranges.
+pub fn default_benchmark_configs() -> Vec<BenchmarkConfig> {
+    let grid_sizes = [64, 128, 256, 512];
+    let obstacle_pcts = [0, 25, 50];
+    let weighted_pcts = [0, 25, 50, 100];
+    let weight_ranges: [u8; 4] = [1, 10, 100, 255];
+
+    let mut configs = Vec::new();
+    for &gs in &grid_sizes {
+        for &op in &obstacle_pcts {
+            for (&wp, &wr) in weighted_pcts.iter().zip(weight_ranges.iter()) {
+                configs.push(BenchmarkConfig {
+                    grid_size: gs,
+                    obstacle_pct: op,
+                    weighted_pct: wp,
+                    weight_range: wr,
+                });
+            }
+        }
+    }
+    configs
+}
+
+/// Run benchmarks across multiple grid configurations and algorithms, writing results to CSV.
+///
+/// For each combination of (config, algorithm), generates `iterations` random grids,
+/// runs pathfinding, and records per-run metrics to `output_path`.
+///
+/// # Arguments
+/// * `configs` - Grid configurations to test
+/// * `algorithms` - Algorithm names (e.g. "A* search", "Breadth First Search", "JPSW", "Greedy")
+/// * `iterations` - Number of runs per (config, algorithm) pair
+/// * `output_path` - Path to the output CSV file
+pub fn run_overall_benchmark(
+    configs: &[BenchmarkConfig],
+    algorithms: &[&str],
+    iterations: u32,
+    output_path: &PathBuf,
+) {
+    let file = std::fs::File::create(output_path).expect("Failed to create CSV file");
+    let mut wtr = csv::Writer::from_writer(file);
+
+    wtr.write_record(&[
+        "algorithm",
+        "grid_size",
+        "obstacle_pct",
+        "weighted_pct",
+        "weight_range",
+        "run",
+        "wcf",
+        "memory_bytes",
+        "time_ms",
+        "steps",
+        "path_cost",
+    ])
+    .expect("Failed to write CSV header");
+
+    let num_cpus = thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+
+    for chunk in configs.chunks(num_cpus) {
+        let mut handles = Vec::new();
+
+        for config in chunk {
+            let algorithms: Vec<String> = algorithms.iter().map(|s| s.to_string()).collect();
+            let config = *config;
+            let handle = thread::spawn(move || {
+                let mut rows: Vec<[String; 11]> = Vec::new();
+                for run in 0..iterations {
+                    let mut board = Board {
+                        location: sdl2::rect::Point::new(0, 0),
+                        width: config.grid_size,
+                        height: config.grid_size,
+                        tile_amount_x: config.grid_size,
+                        tile_amount_y: config.grid_size,
+                        active: false,
+                        id: String::from("benchmark_board"),
+                        selected_piece_type: TileType::Obstacle,
+                        cached_background: None,
+                        cached_grid: std::cell::RefCell::new(None),
+                        multiple_agents: false,
+                        multiple_goals: false,
+                        agents: vec![],
+                        starts: vec![0],
+                        goals: vec![
+                            ((config.grid_size - 1) * config.grid_size + (config.grid_size - 1))
+                                as usize,
+                        ],
+                    };
+
+                    /*board.generate_random_grid(
+                        config.weight_range,
+                        config.obstacle_pct as usize,
+                        config.weighted_pct as usize,
+                        true,
+                    );*/
+
+                    board.generate_organic_city(
+                        0,
+                        2,
+                        config.weight_range as u32,
+                        config.obstacle_pct as f32,
+                        2,
+                        config.weighted_pct as u32,
+                        true,
+                    );
+                    for algorithm in &algorithms {
+                        let grid = board.grid();
+
+                        let start_coord = util::get_coordinate_from_idx(
+                            board.starts[0],
+                            board.tile_amount_x,
+                            board.tile_amount_y,
+                        );
+                        let goal_coord = util::get_coordinate_from_idx(
+                            board.goals[0],
+                            board.tile_amount_x,
+                            board.tile_amount_y,
+                        );
+                        let mut agent = Agent {
+                            start: start_coord,
+                            goal: goal_coord,
+                            position: start_coord,
+                            path: vec![],
+                        };
+
+                        if !agent.is_path_possible(&grid, board.tile_amount_x, board.tile_amount_y)
+                        {
+                            continue;
+                        }
+
+                        let (success, _path, wcf, memory, time, steps, path_cost) = agent.get_path(
+                            algorithm,
+                            &grid,
+                            board.tile_amount_x,
+                            board.tile_amount_y,
+                        );
+
+                        if !success || _path.is_empty() {
+                            continue;
+                        }
+
+                        rows.push([
+                            algorithm.to_string(),
+                            config.grid_size.to_string(),
+                            config.obstacle_pct.to_string(),
+                            config.weighted_pct.to_string(),
+                            config.weight_range.to_string(),
+                            run.to_string(),
+                            format!("{:.6}", wcf),
+                            memory.to_string(),
+                            format!("{:.4}", time.as_secs_f64() * 1000.0),
+                            steps.to_string(),
+                            path_cost.to_string(),
+                        ]);
+                    }
+                }
+                rows
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            if let Ok(rows) = handle.join() {
+                for row in &rows {
+                    wtr.write_record(row).expect("Failed to write CSV row");
+                }
+            }
+        }
+    }
+
+    wtr.flush().expect("Failed to flush CSV writer");
+    println!("Benchmark results written to {:#?}", output_path);
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::board::{Tile, TileType};
+    use crate::{
+        colors::WHITE,
+        components::board::{Tile, TileType},
+    };
     use std::time::Duration;
 
     fn make_empty_pathdata() -> PathData {
@@ -417,50 +613,60 @@ mod tests {
     #[test]
     fn test_sobel_uniform_grid() {
         // All floor tiles with same weight → no edges → high WCF
-        let mut grid = HashMap::new();
-        for x in 0..10 {
-            for y in 0..10 {
-                grid.insert((x, y), Tile::new((x, y), TileType::Floor, 10, 10, 1, false));
+        let mut grid = Vec::new();
+        for y in 0..10 {
+            for x in 0..10 {
+                grid.push(Tile::new((x, y), TileType::Floor, 10, 10, 1, false, WHITE));
             }
         }
-        let wcf = sobel_method(&grid);
+        let wcf = sobel_method(&grid, 10, 10);
         // Uniform grid should have a defined value (no NaN)
         assert!(!wcf.is_nan());
     }
 
     #[test]
     fn test_sobel_varied_grid() {
-        let mut grid = HashMap::new();
-        for x in 0..10 {
-            for y in 0..10 {
+        let mut grid = Vec::new();
+        for y in 0..10 {
+            for x in 0..10 {
                 let weight = if x < 5 { 1 } else { 100 };
-                grid.insert(
+                grid.push(Tile::new(
                     (x, y),
-                    Tile::new((x, y), TileType::Floor, 10, 10, weight, false),
-                );
+                    TileType::Floor,
+                    10,
+                    10,
+                    weight,
+                    false,
+                    WHITE,
+                ));
             }
         }
-        let wcf = sobel_method(&grid);
+        let wcf = sobel_method(&grid, 10, 10);
         assert!(!wcf.is_nan());
     }
 
     #[test]
     fn test_sobel_with_obstacles_excluded() {
         // Obstacles should be skipped, only floor tiles contribute
-        let mut grid = HashMap::new();
-        for x in 0..5 {
-            for y in 0..5 {
+        let mut grid = Vec::new();
+        for y in 0..5 {
+            for x in 0..5 {
                 if x == 2 && y == 2 {
-                    grid.insert(
+                    grid.push(Tile::new(
                         (x, y),
-                        Tile::new((x, y), TileType::Obstacle, 10, 10, 1, false),
-                    );
+                        TileType::Obstacle,
+                        10,
+                        10,
+                        1,
+                        false,
+                        WHITE,
+                    ));
                 } else {
-                    grid.insert((x, y), Tile::new((x, y), TileType::Floor, 10, 10, 1, false));
+                    grid.push(Tile::new((x, y), TileType::Floor, 10, 10, 1, false, WHITE));
                 }
             }
         }
-        let wcf = sobel_method(&grid);
+        let wcf = sobel_method(&grid, 5, 5);
         assert!(!wcf.is_nan());
     }
 }

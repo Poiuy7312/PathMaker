@@ -140,6 +140,21 @@ pub fn add_file_to_dir_map(
     }
 }
 
+#[inline]
+pub fn get_coordinate_from_idx(idx: usize, x_size: u32, _y_size: u32) -> (i32, i32) {
+    let x = (idx % x_size as usize) as i32;
+    let y = (idx / x_size as usize) as i32;
+    (x, y)
+}
+
+#[inline]
+pub fn get_idx_from_coordinate(pos: (i32, i32), width: u32, height: u32) -> Option<usize> {
+    if pos.0 < 0 || pos.1 < 0 || pos.0 >= width as i32 || pos.1 >= height as i32 {
+        return None;
+    }
+    Some(pos.1 as usize * width as usize + pos.0 as usize)
+}
+
 /// Convert a shallow directory tree into a flat HashMap for the initial view.
 ///
 /// Only processes the root node and its immediate children (one level).
