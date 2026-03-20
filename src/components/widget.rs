@@ -658,4 +658,97 @@ mod tests {
         widget.change_active(true); // Should not panic or change state
         assert!(widget.is_active());
     }
+
+    // ------- set_widget_layout -------
+
+    #[test]
+    fn test_set_widget_layout_populates_cache() {
+        let mut widget = make_test_widget();
+        widget.change_drawn(true);
+        assert!(widget.cached_interface_location.is_none());
+        let _ = widget.buttons.get_mut("btn_a");
+        widget.set_widget_layout();
+        assert!(widget.cached_interface_location.is_some());
+    }
+
+    #[test]
+    fn test_set_widget_layout_with_single_component() {
+        let buttons: HashMap<&'static str, Box<dyn Interface>> =
+            HashMap::from([("only", make_button("only"))]);
+        let layout = vec![vec!["only"]];
+        let mut widget = Widget {
+            location: Point::new(0, 0),
+            id: "single".to_string(),
+            result: None,
+            height: 100,
+            width: 100,
+            active: true,
+            buttons,
+            layout,
+            drawn: false,
+            cached_draw_order: None,
+            cached_interface_location: None,
+            important_component_clicked: false,
+        };
+
+        widget.set_widget_layout();
+        assert!(widget.cached_interface_location.is_some());
+        let cache = widget.cached_interface_location.unwrap();
+        assert!(cache.contains_key(&(0, 0)));
+        assert_eq!(cache.get(&(0, 0)), Some(&"only"));
+    }
+
+    #[test]
+    fn test_set_widget_layout_with_multiple_rows() {
+        let buttons: HashMap<&'static str, Box<dyn Interface>> = HashMap::from([
+            ("top", make_button("top")),
+            ("bottom", make_button("bottom")),
+        ]);
+        let layout = vec![vec!["top"], vec!["bottom"]];
+        let mut widget = Widget {
+            location: Point::new(0, 0),
+            id: "multirow".to_string(),
+            result: None,
+            height: 200,
+            width: 100,
+            active: true,
+            buttons,
+            layout,
+            drawn: false,
+            cached_draw_order: None,
+            cached_interface_location: None,
+            important_component_clicked: false,
+        };
+
+        widget.set_widget_layout();
+        let cache = widget.cached_interface_location.unwrap();
+        assert!(cache.contains_key(&(0, 0)));
+        assert!(cache.contains_key(&(0, 1)));
+    }
+
+    #[test]
+    fn test_set_widget_layout_updates_existing_cache() {
+        let mut widget = make_test_widget();
+        widget.cached_interface_location = Some(HashMap::new());
+        widget.set_widget_layout();
+        let cache = widget.cached_interface_location.as_ref().unwrap();
+        assert!(!cache.is_empty());
+    }
+
+    // ------- get_options_on_click -------
+
+    #[test]
+    fn test_get_options_on_click_nonexistent() {
+        let mut widget = make_test_widget();
+        let result = widget.get_options_on_click("nonexistent".to_string(), Point::new(0, 0));
+        assert_eq!(result, (false, None));
+    }
+
+    #[test]
+    fn test_invalidate_draw_cache_resets_draw_order() {
+        let mut widget = make_test_widget();
+        widget.cached_draw_order = Some(vec!["btn_a", "btn_b"]);
+        widget.invalidate_draw_cache();
+        assert!(widget.cached_draw_order.is_none());
+    }
 }
