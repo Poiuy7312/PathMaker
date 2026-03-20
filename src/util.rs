@@ -233,6 +233,185 @@ pub fn get_dir_map(
 mod tests {
     use super::*;
     use sdl2::rect::{Point, Rect};
+    use std::cell::RefCell;
+
+    // ------- get_coordinate_from_idx -------
+
+    #[test]
+    fn test_get_coordinate_from_idx_basic() {
+        let (x, y) = get_coordinate_from_idx(0, 10, 10);
+        assert_eq!(x, 0);
+        assert_eq!(y, 0);
+    }
+
+    #[test]
+    fn test_get_coordinate_from_idx_second_row() {
+        let (x, y) = get_coordinate_from_idx(10, 10, 10);
+        assert_eq!(x, 0);
+        assert_eq!(y, 1);
+    }
+
+    #[test]
+    fn test_get_coordinate_from_idx_middle() {
+        let (x, y) = get_coordinate_from_idx(15, 10, 10);
+        assert_eq!(x, 5);
+        assert_eq!(y, 1);
+    }
+
+    #[test]
+    fn test_get_coordinate_from_idx_last() {
+        let (x, y) = get_coordinate_from_idx(99, 10, 10);
+        assert_eq!(x, 9);
+        assert_eq!(y, 9);
+    }
+
+    // ------- get_idx_from_coordinate -------
+
+    #[test]
+    fn test_get_idx_from_coordinate_basic() {
+        let idx = get_idx_from_coordinate((0, 0), 10, 10);
+        assert_eq!(idx, Some(0));
+    }
+
+    #[test]
+    fn test_get_idx_from_coordinate_second_row() {
+        let idx = get_idx_from_coordinate((0, 1), 10, 10);
+        assert_eq!(idx, Some(10));
+    }
+
+    #[test]
+    fn test_get_idx_from_coordinate_middle() {
+        let idx = get_idx_from_coordinate((5, 1), 10, 10);
+        assert_eq!(idx, Some(15));
+    }
+
+    #[test]
+    fn test_get_idx_from_coordinate_out_of_bounds_negative() {
+        assert_eq!(get_idx_from_coordinate((-1, 0), 10, 10), None);
+        assert_eq!(get_idx_from_coordinate((0, -1), 10, 10), None);
+    }
+
+    #[test]
+    fn test_get_idx_from_coordinate_out_of_bounds_too_large() {
+        assert_eq!(get_idx_from_coordinate((10, 0), 10, 10), None);
+        assert_eq!(get_idx_from_coordinate((0, 10), 10, 10), None);
+    }
+
+    // ------- add_file_to_dir_map -------
+
+    #[test]
+    fn test_add_file_to_dir_map_inserts_file() {
+        let directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        directories.borrow_mut().insert(
+            "/home".to_string(),
+            (
+                StandardButton {
+                    height: 25,
+                    width: 200,
+                    location: Point::new(0, 62),
+                    text_color: WHITE,
+                    background_color: QUATERNARY_COLOR,
+                    hover: RefCell::new(false),
+                    text: "home".to_string(),
+                    id: "/home".to_string(),
+                    active: false,
+                    filter: None,
+                    drawn: RefCell::new(false),
+                    cached_texture: None,
+                },
+                Vec::new(),
+            ),
+        );
+
+        add_file_to_dir_map(directories.clone(), "/home".to_string(), "test_map");
+
+        let map = directories.borrow();
+        let full_path = "/home/test_map.json";
+        assert!(map.contains_key(full_path));
+        let (btn, children) = map.get(full_path).unwrap();
+        assert_eq!(btn.text, "test_map");
+        assert_eq!(children.len(), 0);
+    }
+
+    #[test]
+    fn test_add_file_to_dir_map_updates_parent_children() {
+        let directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        directories.borrow_mut().insert(
+            "/home".to_string(),
+            (
+                StandardButton {
+                    height: 25,
+                    width: 200,
+                    location: Point::new(0, 62),
+                    text_color: WHITE,
+                    background_color: QUATERNARY_COLOR,
+                    hover: RefCell::new(false),
+                    text: "home".to_string(),
+                    id: "/home".to_string(),
+                    active: false,
+                    filter: None,
+                    drawn: RefCell::new(false),
+                    cached_texture: None,
+                },
+                Vec::new(),
+            ),
+        );
+
+        add_file_to_dir_map(directories.clone(), "/home".to_string(), "test_map");
+
+        let map = directories.borrow();
+        let (_, children) = map.get("/home").unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0], "/home/test_map.json");
+    }
+
+    // ------- get_dir_map -------
+
+    #[test]
+    fn test_get_dir_map_empty_node() {
+        let node = fileDialog::DirectoryNode {
+            name: "empty".to_string(),
+            path: std::path::PathBuf::from("/empty"),
+            is_dir: false,
+            children: vec![],
+        };
+
+        let map = get_dir_map(&node, 800);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_get_dir_map_with_children() {
+        let node = fileDialog::DirectoryNode {
+            name: "test".to_string(),
+            path: std::path::PathBuf::from("/test"),
+            is_dir: true,
+            children: vec![
+                fileDialog::DirectoryNode {
+                    name: "child1".to_string(),
+                    path: std::path::PathBuf::from("/test/child1"),
+                    is_dir: true,
+                    children: vec![],
+                },
+                fileDialog::DirectoryNode {
+                    name: "child2.json".to_string(),
+                    path: std::path::PathBuf::from("/test/child2.json"),
+                    is_dir: false,
+                    children: vec![],
+                },
+            ],
+        };
+
+        let map = get_dir_map(&node, 800);
+        assert!(!map.is_empty());
+        assert!(map.contains_key("/test"));
+        assert!(map.contains_key("/test/child1"));
+        assert!(map.contains_key("/test/child2.json"));
+    }
 
     // ------- mouse_over -------
 

@@ -2119,4 +2119,209 @@ mod tests {
         assert!(!ob.deactivate_parent());
         assert!(ob.after_click());
     }
+
+    // Additional slider tests for change_slider_value method
+
+    #[test]
+    fn test_slider_change_slider_value_horizontal() {
+        let mut slider = make_slider(0, 0, 200, 40, 100);
+        slider.change_slider_value(Point::new(50, 20));
+        assert!(slider.value > 0);
+    }
+
+    #[test]
+    fn test_slider_change_slider_value_vertical() {
+        let mut slider = make_slider(0, 0, 20, 200, 100);
+        slider.is_vertical = true;
+        slider.change_slider_value(Point::new(10, 50));
+        assert!(slider.value > 0);
+    }
+
+    #[test]
+    fn test_slider_get_slider_width() {
+        let slider = make_slider(0, 0, 200, 40, 100);
+        let width = slider.get_slider_width();
+        assert!(width > 0);
+        assert!(width <= 40);
+    }
+
+    #[test]
+    fn test_slider_get_rect() {
+        let slider = make_slider(10, 20, 200, 40, 100);
+        let rect = slider.get_rect(Point::new(10, 20));
+        assert_eq!(rect.x(), 10);
+        assert_eq!(rect.y(), 20);
+        assert_eq!(rect.width(), 200);
+        assert_eq!(rect.height(), 40);
+    }
+
+    #[test]
+    fn test_slider_mouse_over() {
+        let slider = make_slider(10, 20, 200, 40, 100);
+        assert!(slider.mouse_over_component(Point::new(100, 40)));
+        assert!(!slider.mouse_over_component(Point::new(500, 500)));
+    }
+
+    #[test]
+    fn test_slider_mouse_over_inactive() {
+        let mut slider = make_slider(10, 20, 200, 40, 100);
+        slider.active = false;
+        assert!(!slider.mouse_over_component(Point::new(100, 40)));
+    }
+
+    // Additional dropdown tests
+
+    #[test]
+    fn test_dropdown_contains_no_matching_filter() {
+        let mut dd = make_dropdown(0, 0, 200, 30);
+        dd.id = "Path_Selector".to_string();
+        assert!(!dd.contains(Some("Download")));
+    }
+
+    #[test]
+    fn test_dropdown_mouse_over() {
+        let dd = make_dropdown(10, 20, 200, 30);
+        assert!(dd.mouse_over_component(Point::new(100, 35)));
+        assert!(!dd.mouse_over_component(Point::new(500, 500)));
+    }
+
+    #[test]
+    fn test_dropdown_mouse_over_inactive() {
+        let mut dd = make_dropdown(10, 20, 200, 30);
+        dd.active = false;
+        assert!(!dd.mouse_over_component(Point::new(100, 35)));
+    }
+
+    // Additional checkbox tests
+
+    #[test]
+    fn test_checkbox_mouse_over() {
+        let cb = make_checkbox(10, 20, 100, 30);
+        assert!(cb.mouse_over_component(Point::new(50, 35)));
+        assert!(!cb.mouse_over_component(Point::new(500, 500)));
+    }
+
+    #[test]
+    fn test_checkbox_mouse_over_inactive() {
+        let mut cb = make_checkbox(10, 20, 100, 30);
+        cb.active = false;
+        assert!(!cb.mouse_over_component(Point::new(50, 35)));
+    }
+
+    #[test]
+    fn test_checkbox_drawn_state() {
+        let cb = make_checkbox(0, 0, 100, 30);
+        assert!(!cb.is_drawn());
+        cb.change_drawn(true);
+        assert!(cb.is_drawn());
+    }
+
+    #[test]
+    fn test_checkbox_get_rect() {
+        let cb = make_checkbox(10, 20, 100, 30);
+        let rect = cb.get_rect(Point::new(10, 20));
+        assert_eq!(rect.x(), 10);
+        assert_eq!(rect.y(), 20);
+        assert_eq!(rect.width(), 100);
+        assert_eq!(rect.height(), 30);
+    }
+
+    #[test]
+    fn test_checkbox_change_dimensions() {
+        let mut cb = make_checkbox(0, 0, 100, 30);
+        cb.change_width(200);
+        cb.change_height(50);
+        assert_eq!(cb.get_width(), 200);
+        assert_eq!(cb.get_height(), 50);
+    }
+
+    #[test]
+    fn test_checkbox_change_active() {
+        let mut cb = make_checkbox(0, 0, 100, 30);
+        assert!(cb.is_active());
+        cb.change_active(false);
+        assert!(!cb.is_active());
+    }
+
+    // Additional standard button tests
+
+    #[test]
+    fn test_standard_button_mouse_over_at_boundary() {
+        let btn = make_standard_button(10, 10, 100, 50);
+        assert!(btn.mouse_over_component(Point::new(10, 10)));
+        assert!(btn.mouse_over_component(Point::new(109, 59)));
+        assert!(!btn.mouse_over_component(Point::new(110, 60)));
+    }
+
+    #[test]
+    fn test_standard_button_get_location() {
+        let btn = make_standard_button(10, 20, 100, 50);
+        assert_eq!(btn.get_location(), Point::new(10, 20));
+    }
+
+    #[test]
+    fn test_standard_button_get_height() {
+        let btn = make_standard_button(0, 0, 100, 50);
+        assert_eq!(btn.get_height(), 50);
+    }
+
+    #[test]
+    fn test_standard_button_change_drawn_cascades() {
+        let btn = make_standard_button(0, 0, 100, 50);
+        assert!(!btn.is_drawn());
+    }
+
+    // Additional option button tests
+
+    #[test]
+    fn test_option_button_get_location() {
+        let ob = make_option_button();
+        assert_eq!(ob.get_location(), Point::new(0, 0));
+    }
+
+    #[test]
+    fn test_option_button_get_height() {
+        let ob = make_option_button();
+        assert_eq!(ob.get_height(), 30);
+    }
+
+    #[test]
+    fn test_option_button_mouse_over() {
+        let ob = make_option_button();
+        assert!(ob.mouse_over_component(Point::new(30, 15)));
+        assert!(!ob.mouse_over_component(Point::new(500, 500)));
+    }
+
+    #[test]
+    fn test_option_button_mouse_over_inactive() {
+        let mut ob = make_option_button();
+        ob.active = false;
+        assert!(!ob.mouse_over_component(Point::new(30, 15)));
+    }
+
+    #[test]
+    fn test_option_button_change_active() {
+        let mut ob = make_option_button();
+        assert!(ob.is_active());
+        ob.change_active(false);
+        assert!(!ob.is_active());
+    }
+
+    #[test]
+    fn test_option_button_drawn_state() {
+        let ob = make_option_button();
+        assert!(!ob.is_drawn());
+        ob.change_drawn(true);
+        assert!(ob.is_drawn());
+    }
+
+    #[test]
+    fn test_option_button_get_rect() {
+        let ob = make_option_button();
+        let rect = ob.get_rect(Point::new(0, 0));
+        assert_eq!(rect.x(), 0);
+        assert_eq!(rect.y(), 0);
+        assert_eq!(rect.width(), 200);
+        assert_eq!(rect.height(), 30);
+    }
 }

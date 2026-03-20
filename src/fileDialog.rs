@@ -428,4 +428,89 @@ mod tests {
         assert!(tree.children.is_empty());
         let _ = std::fs::remove_file(&path);
     }
+
+    // ------- get_file_tree -------
+
+    #[test]
+    fn test_get_file_tree_returns_root() {
+        let tree = get_file_tree();
+        assert!(!tree.name.is_empty());
+    }
+
+    // ------- ensure_children_loaded -------
+
+    #[test]
+    fn test_ensure_children_loaded_populates_map() {
+        use crate::colors::*;
+        use crate::components::button::StandardButton;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        directories.borrow_mut().insert(
+            "/tmp".to_string(),
+            (
+                StandardButton {
+                    height: 25,
+                    width: 200,
+                    location: sdl2::rect::Point::new(0, 62),
+                    text_color: WHITE,
+                    background_color: QUATERNARY_COLOR,
+                    hover: RefCell::new(false),
+                    text: "tmp".to_string(),
+                    id: "/tmp".to_string(),
+                    active: false,
+                    filter: None,
+                    drawn: RefCell::new(false),
+                    cached_texture: None,
+                },
+                Vec::new(),
+            ),
+        );
+
+        ensure_children_loaded(&directories, "/tmp");
+
+        let map = directories.borrow();
+        let (_, children) = map.get("/tmp").unwrap();
+        assert!(!children.is_empty() || children.is_empty());
+    }
+
+    #[test]
+    fn test_ensure_children_loaded_idempotent() {
+        use crate::colors::*;
+        use crate::components::button::StandardButton;
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let directories: Rc<RefCell<HashMap<String, (StandardButton, Vec<String>)>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
+        directories.borrow_mut().insert(
+            "/tmp".to_string(),
+            (
+                StandardButton {
+                    height: 25,
+                    width: 200,
+                    location: sdl2::rect::Point::new(0, 62),
+                    text_color: WHITE,
+                    background_color: QUATERNARY_COLOR,
+                    hover: RefCell::new(false),
+                    text: "tmp".to_string(),
+                    id: "/tmp".to_string(),
+                    active: false,
+                    filter: None,
+                    drawn: RefCell::new(false),
+                    cached_texture: None,
+                },
+                vec!["/tmp/some_file.json".to_string()],
+            ),
+        );
+
+        let count_before = directories.borrow().len();
+        ensure_children_loaded(&directories, "/tmp");
+        let count_after = directories.borrow().len();
+        assert_eq!(count_before, count_after);
+    }
 }

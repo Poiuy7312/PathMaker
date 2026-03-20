@@ -1486,4 +1486,86 @@ mod tests {
         assert!(path.exists());
         let _ = std::fs::remove_file(path);
     }
+
+    // ------- Board load_board_file -------
+
+    #[test]
+    fn test_load_board_file_parses_json() {
+        let mut board = make_test_board(5, 5);
+        let _ = board.grid();
+        let json = serde_json::to_string(&board).unwrap();
+        let loaded = board.load_board_file(json);
+        assert_eq!(loaded.tile_amount_x, 5);
+        assert_eq!(loaded.tile_amount_y, 5);
+    }
+
+    // ------- Board generate_organic_city -------
+
+    #[test]
+    fn test_generate_organic_city_creates_grid() {
+        let mut board = make_test_board(10, 10);
+        board.generate_organic_city(1, 2, 4, 50.0, 2, 5, false);
+        let grid = board.grid();
+        assert_eq!(grid.len(), 100);
+    }
+
+    #[test]
+    fn test_generate_organic_city_with_agents() {
+        let mut board = make_test_board(10, 10);
+        board.starts = vec![0];
+        board.goals = vec![99];
+        board.generate_organic_city(1, 2, 4, 50.0, 2, 5, true);
+        let grid = board.grid();
+        assert_eq!(grid.len(), 100);
+        assert!(!board.starts.is_empty() || !board.goals.is_empty());
+    }
+
+    // ------- Board ensure_grid -------
+
+    #[test]
+    fn test_ensure_grid_populates_cache() {
+        let board = make_test_board(5, 5);
+        assert!(board.cached_grid.borrow().is_none());
+        board.ensure_grid();
+        assert!(board.cached_grid.borrow().is_some());
+    }
+
+    #[test]
+    fn test_grid_returns_clone() {
+        let board = make_test_board(3, 3);
+        let grid1 = board.grid();
+        let grid2 = board.grid();
+        assert_eq!(grid1.len(), grid2.len());
+    }
+
+    // ------- Additional board tests -------
+
+    #[test]
+    fn test_board_get_location() {
+        let board = make_test_board(5, 5);
+        assert_eq!(board.get_location(), Point::new(0, 0));
+    }
+
+    #[test]
+    fn test_board_on_click_outside_returns_false() {
+        let mut board = make_test_board(10, 10);
+        let (clicked, _) = board.on_click(Point::new(2000, 2000));
+        assert!(!clicked);
+    }
+
+    #[test]
+    fn test_board_tile_width_calculation() {
+        let mut board = make_test_board(5, 5);
+        board.change_width(100);
+        board.change_height(100);
+        assert_eq!(board.tile_width(), 20);
+    }
+
+    #[test]
+    fn test_board_tile_height_calculation() {
+        let mut board = make_test_board(5, 5);
+        board.change_width(100);
+        board.change_height(100);
+        assert_eq!(board.tile_height(), 20);
+    }
 }
