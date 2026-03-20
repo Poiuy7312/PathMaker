@@ -1963,6 +1963,16 @@ mod tests {
     }
 
     #[test]
+    fn test_jpsw_find_path_open_grid() {
+        let grid = make_open_grid(10, 10);
+        let algo = get_algorithm("JPSW");
+        let (path, _cost) = algo.find_path((0, 0), (9, 9), &grid, 10, 10);
+        assert!(!path.is_empty(), "JPSW should find a path on open grid");
+        assert_eq!(*path.last().unwrap(), (0, 0));
+        assert_eq!(path[0], (9, 9));
+    }
+
+    #[test]
     fn test_bfs_finds_path_open_grid() {
         let grid = make_open_grid(10, 10);
         let algo = get_algorithm("Breadth First Search");

@@ -307,8 +307,21 @@ impl Agent {
         #[cfg(target_os = "windows")]
         let after = crate::ALLOC.allocated() as u64;
         let time = now.elapsed();
+        // An empty path means no route was found
+        if path.is_empty() {
+            return (
+                false,
+                vec![],
+                sobel_method(&map, width, height),
+                after - before,
+                time,
+                steps,
+                0,
+            );
+        }
         if !algorithm.returns_full_path() {
             path = algorithm.reconstruct_path(path);
+            path.push(self.start);
         }
         let weight = get_overall_path_weight(&path, map, width, height);
 
