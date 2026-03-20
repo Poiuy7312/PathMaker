@@ -23,12 +23,13 @@ use jemalloc_ctl::{epoch, stats};
 
 // Cross-platform memory tracking allocator (used on Windows; jemalloc used on Unix)
 #[cfg(target_os = "windows")]
+use sdl2::image::LoadSurface;
+#[cfg(target_os = "windows")]
 #[global_allocator]
 static ALLOC: cap::Cap<std::alloc::System> = cap::Cap::new(std::alloc::System, usize::MAX);
 
 // SDL2 imports for graphics, events, and text rendering
 use sdl2::event::Event;
-use sdl2::image::LoadSurface;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
@@ -96,10 +97,11 @@ fn ensure_assets() -> PathBuf {
     if !font_path.exists() {
         fs::write(&font_path, FONT_BYTES).expect("Failed to write font file");
     }
-
-    let icon_path = data_dir.join("Icon.svg");
-    if !icon_path.exists() {
-        fs::write(&icon_path, ICON_BYTES).expect("Failed to write icon file");
+    if cfg!(target_os = "windows") {
+        let icon_path = data_dir.join("Icon.svg");
+        if !icon_path.exists() {
+            fs::write(&icon_path, ICON_BYTES).expect("Failed to write icon file");
+        }
     }
 
     data_dir
@@ -154,10 +156,13 @@ pub fn main() {
     //  .set_fullscreen(sdl2::video::FullscreenType::True)
     //   .unwrap();
     let data_dir = ensure_assets();
-    let icon_path = data_dir.join("Icon.svg");
+    #[cfg(target_os = "windows")]
+    {
+        let icon_path = data_dir.join("Icon.svg");
+        let window_icon = Surface::from_file(&icon_path).unwrap();
+        window.set_icon(window_icon);
+    }
     let font_path = data_dir.join("fonts/OpenSans-Semibold.ttf");
-    let window_icon = Surface::from_file(&icon_path).unwrap();
-    window.set_icon(window_icon);
     let mut canvas = window.into_canvas().build().unwrap();
 
     let texture_creator = canvas.texture_creator();

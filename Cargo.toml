@@ -20,8 +20,8 @@ cap = "0.1"
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 jemallocator = "0.5.4"
 jemalloc-ctl = "0.5.4"
+sdl2 = { version = "0.38.0", features = ["ttf","static-link", "use-pkgconfig"]}
 
-[dependencies.sdl2]
-version = "0.38.0"
-default-features = false
-features = ["ttf","image", "static-link", "use-pkgconfig"]
+[target.'cfg(target_os = "windows")'.dependencies]
+cap = "0.1"
+sdl2 = { version = "0.38.0", features = ["ttf","image","static-link", "use-pkgconfig"]}
