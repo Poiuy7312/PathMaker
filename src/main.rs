@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::{env, fs, thread};
+use std::{env, fs};
 
 /// Global allocator using jemalloc for improved memory allocation performance
 /// and accurate memory usage tracking during pathfinding benchmarks.
@@ -147,7 +147,7 @@ pub fn main() {
     //let window_width = display_mode.w as u32;
     //let window_height = display_mode.h as u32;
     video_subsystem.text_input().stop();
-    let mut window = video_subsystem
+    let window = video_subsystem
         .window("PathMaker demo", window_width, window_height)
         .position_centered()
         .build()
@@ -163,7 +163,12 @@ pub fn main() {
         window.set_icon(window_icon);
     }
     let font_path = data_dir.join("fonts/OpenSans-Semibold.ttf");
-    let mut canvas = window.into_canvas().build().unwrap();
+    let mut canvas = window
+        .into_canvas()
+        .accelerated()
+        .present_vsync()
+        .build()
+        .unwrap();
 
     let texture_creator = canvas.texture_creator();
     let directory_tree = fileDialog::get_file_tree();
@@ -1445,10 +1450,6 @@ pub fn main() {
         /*-------- Updates values for board Generation -------- */
 
         // Cap at ~60 FPS
-        let elapsed = frame_start.elapsed();
-        if elapsed < TARGET_FRAME_DURATION {
-            thread::sleep(TARGET_FRAME_DURATION - elapsed);
-        }
     }
 }
 
