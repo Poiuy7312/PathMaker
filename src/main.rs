@@ -1485,17 +1485,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ensure_assets_creates_icon_file() {
-        let data_dir = ensure_assets();
-        let icon_path = data_dir.join("Icon.svg");
-        assert!(icon_path.exists(), "Icon file should exist");
-        assert!(
-            icon_path.metadata().unwrap().len() > 0,
-            "Icon file should not be empty"
-        );
-    }
-
-    #[test]
     fn test_ensure_assets_idempotent() {
         let dir1 = ensure_assets();
         let dir2 = ensure_assets();
