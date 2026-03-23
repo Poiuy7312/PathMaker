@@ -97,12 +97,8 @@ fn ensure_assets() -> PathBuf {
     if !font_path.exists() {
         fs::write(&font_path, FONT_BYTES).expect("Failed to write font file");
     }
-    if cfg!(target_os = "windows") {
-        let icon_path = data_dir.join("Icon.svg");
-        if !icon_path.exists() {
-            fs::write(&icon_path, ICON_BYTES).expect("Failed to write icon file");
-        }
-    }
+    let icon_path = data_dir.join("Icon.svg");
+    fs::write(&icon_path, ICON_BYTES).expect("Failed to write icon file");
 
     data_dir
 }
