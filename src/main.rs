@@ -147,7 +147,7 @@ pub fn main() {
     //let window_width = display_mode.w as u32;
     //let window_height = display_mode.h as u32;
     video_subsystem.text_input().stop();
-    let window = video_subsystem
+    let mut window = video_subsystem
         .window("PathMaker demo", window_width, window_height)
         .position_centered()
         .build()
