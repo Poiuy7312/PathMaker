@@ -121,6 +121,7 @@ jobs:
           mkdir -p staging
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
           cp "$GRAPHITE_LIB" staging/
+          install_name_tool -add_rpath "@loader_path" staging/${{ matrix.binary }}
           cp -r src/assets staging/ 2>/dev/null || true
           cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
 
