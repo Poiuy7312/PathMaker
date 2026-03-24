@@ -54,7 +54,7 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install sdl2 sdl2_ttf pkg-config
+          brew install sdl2 sdl2_ttf pkg-config graphite2
 
       # --- Windows dependencies (vcpkg) ---
       - name: Set up vcpkg cache (Windows)
@@ -106,11 +106,21 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       # --- Package binary ---
-      - name: Package binary (Unix)
-        if: runner.os != 'Windows'
+      - name: Package binary (Linux)
+        if: runner.os == 'Linux'
         run: |
           mkdir -p staging
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
+          cp -r src/assets staging/ 2>/dev/null || true
+          cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
+
+      - name: Package binary (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          GRAPHITE_LIB=$(brew --prefix)/lib/libgraphite.3.dylib
+          mkdir -p staging
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
+          cp "$GRAPHITE_LIB" staging/
           cp -r src/assets staging/ 2>/dev/null || true
           cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
 
