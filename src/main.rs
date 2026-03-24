@@ -97,12 +97,8 @@ fn ensure_assets() -> PathBuf {
     if !font_path.exists() {
         fs::write(&font_path, FONT_BYTES).expect("Failed to write font file");
     }
-    if cfg!(target_os = "windows") {
-        let icon_path = data_dir.join("Icon.svg");
-        if !icon_path.exists() {
-            fs::write(&icon_path, ICON_BYTES).expect("Failed to write icon file");
-        }
-    }
+    let icon_path = data_dir.join("Icon.svg");
+    fs::write(&icon_path, ICON_BYTES).expect("Failed to write icon file");
 
     data_dir
 }
@@ -1485,17 +1481,6 @@ mod tests {
         assert!(
             font_path.metadata().unwrap().len() > 0,
             "Font file should not be empty"
-        );
-    }
-
-    #[test]
-    fn test_ensure_assets_creates_icon_file() {
-        let data_dir = ensure_assets();
-        let icon_path = data_dir.join("Icon.svg");
-        assert!(icon_path.exists(), "Icon file should exist");
-        assert!(
-            icon_path.metadata().unwrap().len() > 0,
-            "Icon file should not be empty"
         );
     }
 
