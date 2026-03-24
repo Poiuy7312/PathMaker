@@ -54,7 +54,7 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install sdl2 sdl2_ttf pkg-config graphite2
+          brew install sdl2 sdl2_ttf pkg-config harfbuzz
 
       # --- Windows dependencies (vcpkg) ---
       - name: Set up vcpkg cache (Windows)
@@ -117,11 +117,23 @@ jobs:
       - name: Package binary (macOS)
         if: runner.os == 'macOS'
         run: |
-          GRAPHITE_LIB=$(brew --prefix)/lib/libgraphite.3.dylib
           mkdir -p staging
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
-          cp "$GRAPHITE_LIB" staging/
+          for lib in libgraphite.3.dylib libgraphite2.3.dylib; do
+            if [ -f "$(brew --prefix)/lib/$lib" ]; then
+              cp "$(brew --prefix)/lib/$lib" staging/
+              break
+            fi
+          done
           install_name_tool -add_rpath "@loader_path" staging/${{ matrix.binary }}
+          cat > staging/pathmaker << 'SCRIPT'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "$0")" && pwd)"
+          export DYLD_LIBRARY_PATH="$DIR:$DYLD_LIBRARY_PATH"
+          exec "$DIR/pathmaker_bin" "$@"
+          SCRIPT
+          chmod +x staging/pathmaker
+          mv staging/${{ matrix.binary }} staging/pathmaker_bin
           cp -r src/assets staging/ 2>/dev/null || true
           cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
 
