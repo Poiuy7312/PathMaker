@@ -103,6 +103,7 @@ fn ensure_assets() -> PathBuf {
     data_dir
 }
 
+use crate::components::displaybox::DisplayBox;
 use crate::components::file_explorer::FileExplorer;
 use crate::components::{board::*, button::*, inputbox::*, widget::*, Component};
 use crate::settings::GameSettings;
@@ -134,6 +135,9 @@ pub fn main() {
     let board_height: u32 = settings.board_height;
     let window_width: u32 = settings.window_width;
     let window_height: u32 = settings.window_height;
+    let debug_height = window_height / 4;
+    let control_width = window_width - board_width;
+    let control_height = window_height - debug_height;
     let tiles_x: u32 = settings.tiles_x; // Replace with settings.tiles_x
     let tiles_y: u32 = settings.tiles_y;
     let sdl_context = sdl2::init().unwrap();
@@ -647,11 +651,11 @@ pub fn main() {
     ]);
 
     let mut board_control_widget: Widget = Widget {
-        location: Point::new(window_width as i32 * 4 / 5, 0),
+        location: Point::new((0 + board_width + 3) as i32, 0),
         id: String::from("Board_Control"),
         result: None,
-        height: window_height,
-        width: controls_width,
+        height: control_height,
+        width: control_width,
         active: false,
         buttons: board_control_buttons,
         layout: board_control_layout,
@@ -791,6 +795,18 @@ pub fn main() {
     };
 
     let mut event_pump = sdl_context.event_pump().unwrap();
+
+    let mut debug_window = DisplayBox::new(
+        (window_width - control_width) as i32,
+        (window_height - debug_height) as i32,
+        control_width,
+        debug_height,
+        "Debug_Window",
+    );
+    debug_window.add_line("Output");
+    debug_window.add_line("----------------");
+    debug_window.active = true;
+
     let mut game_board: Board = Board {
         location: Point::new(0, 0),
         width: board_width,
@@ -856,7 +872,7 @@ pub fn main() {
         }
 
         if run_game_board {
-            game_board.run_board(
+            let results = game_board.run_board(
                 &mut canvas,
                 &settings.selected_algorithm,
                 settings.enable_doubling_experiment,
@@ -869,6 +885,10 @@ pub fn main() {
                 settings.gen_mode,
                 true,
             );
+            debug_window.clear();
+            for line in results.lines() {
+                debug_window.add_line(line);
+            }
             run_game_board = false;
         }
 
@@ -937,6 +957,10 @@ pub fn main() {
                     &replacement_labels,
                 );
             }
+        }
+
+        if debug_window.active {
+            debug_window.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
         }
         /*------ Board Editing Components ------*/
 
@@ -1427,6 +1451,15 @@ pub fn main() {
                                 }
                             }
                             save_widget.change_drawn(false);
+                        }
+                    }
+                }
+                Event::MouseWheel { y, .. } => {
+                    if debug_window.active {
+                        if y > 0 {
+                            debug_window.scroll_up();
+                        } else if y < 0 {
+                            debug_window.scroll_down();
                         }
                     }
                 }

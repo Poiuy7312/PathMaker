@@ -914,7 +914,7 @@ impl Board {
         weight_range: u8,
         gen_mode: settings::GenerationMode,
         display_last_run: bool,
-    ) {
+    ) -> String {
         if !random_agents {
             if self.agents.is_empty() {
                 self.create_agents();
@@ -1006,16 +1006,13 @@ impl Board {
                                 // If any path is not possible, regenerate
                                 if steps.is_none() {
                                     valid_iteration = false;
-                                    if !doubling || !dyn_gen {
-                                        println!("No possible Path");
-                                        return;
+                                    if !doubling && !dyn_gen {
+                                        return "No possible Path".to_string();
                                     }
                                 } else {
-                                    if !doubling || !dyn_gen {
-                                        println!("Path is possible but algorithm couldn't find a solution in a reasonable amount of time");
-                                        return;
+                                    if !doubling && !dyn_gen {
+                                        return "Path is possible but algorithm couldn't find a solution in a reasonable amount of time".to_string();
                                     }
-                                    println!("Path is possible but algorithm couldn't find a solution in a reasonable amount of time");
                                     break;
                                 }
                             } else {
@@ -1083,7 +1080,9 @@ impl Board {
                         }
                     });
                     self.cached_grid.replace(Some(grid));
+                    #[cfg(target_os = "macos")]
                     canvas.set_draw_color(Color::RGB(87, 87, 81));
+                    #[cfg(target_os = "macos")]
                     canvas.clear();
                     self.draw(canvas);
                     canvas.present();
@@ -1116,7 +1115,9 @@ impl Board {
                     }
                 });
                 self.cached_grid.replace(Some(grid));
+                #[cfg(target_os = "macos")]
                 canvas.set_draw_color(Color::RGB(87, 87, 81));
+                #[cfg(target_os = "macos")]
                 canvas.clear();
                 self.draw(canvas);
                 canvas.present();
@@ -1128,10 +1129,12 @@ impl Board {
             self.agents.clear();
             println!("{}", i);
         }
+        let mut data_display = String::new();
         for (_, data) in &data_map {
-            println!("{}", format!("{}", data));
+            data_display += format!("{}", data).as_str();
         }
         fileDialog::save_data(&data_map);
+        return data_display;
     }
 
     /// Get the bounding rectangle of the board.
