@@ -60,8 +60,7 @@ jobs:
           ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
           ./vcpkg/vcpkg install sdl2:x64-linux sdl2-ttf:x64-linux sdl2-image:x64-linux
           echo "VCPKG_ROOT=$PWD/vcpkg" >> $GITHUB_ENV
-          echo "VCPKGRS_DYNAMIC=1" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$PWD/vcpkg/installed/x64-linux/lib/pkgconfig" >> $GITHUB_ENV
+          echo "VCPKGRS_DYNAMIC=0" >> $GITHUB_ENV
 
       # --- macOS dependencies ---
       - name: Install macOS dependencies
@@ -108,10 +107,7 @@ jobs:
       # --- Build ---
       - name: Build (Linux)
         if: runner.os == 'Linux'
-        run: |
-          export SDL2_LIB_DIR=$HOME/vcpkg/installed/x64-linux/lib
-          export SDL2_INCLUDE_DIR=$HOME/vcpkg/installed/x64-linux/include
-          cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
