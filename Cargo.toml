@@ -24,7 +24,7 @@ sdl2 = { version = "0.38.0", features = ["ttf","image","static-link", "use-pkgco
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = "0.5.4"
 jemalloc-ctl = "0.5.4"
-sdl2 = { version = "0.38.0", features = ["ttf","static-link", "use-pkgconfig"]}
+sdl2 = { version = "0.38.0", features = ["ttf","static-link","bundled", "use-pkgconfig"]}
 
 
 [target.'cfg(target_os = "macos")'.dependencies]
