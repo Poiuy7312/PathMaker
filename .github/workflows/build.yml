@@ -106,28 +106,11 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       # --- Package binary ---
-      - name: Package binary (Linux)
-        if: runner.os == 'Linux'
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p staging
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
-          cp -r src/assets staging/ 2>/dev/null || true
-          cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
-
-      - name: Package binary (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p staging
-          cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
-          install_name_tool -add_rpath "@loader_path" staging/${{ matrix.binary }}
-          cat > staging/pathmaker << 'SCRIPT'
-          #!/bin/bash
-          DIR="$(cd "$(dirname "$0")" && pwd)"
-          export DYLD_LIBRARY_PATH="$DIR:$DYLD_LIBRARY_PATH"
-          exec "$DIR/pathmaker_bin" "$@"
-          SCRIPT
-          chmod +x staging/pathmaker
-          mv staging/${{ matrix.binary }} staging/pathmaker_bin
           cp -r src/assets staging/ 2>/dev/null || true
           cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
 
