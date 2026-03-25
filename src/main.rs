@@ -814,10 +814,12 @@ pub fn main() {
     game_board.draw(&mut canvas);
     let (mut window_width, mut window_height) =
         canvas.output_size().expect("Unable to obtain window size");
-    const TARGET_FRAME_DURATION: Duration = Duration::from_nanos(1_000_000_000 / 60);
-
     'running: loop {
-        let frame_start = Instant::now();
+        #[cfg(target_os = "macos")]
+        {
+            canvas.set_draw_color(Color::RGB(87, 87, 81));
+            canvas.clear();
+        }
         let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
         let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
         /*-------- User UI -------- */

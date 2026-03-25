@@ -141,7 +141,6 @@ impl Tile {
 
     /// Draw this tile to the canvas.
     ///
-    /// Only redraws if the tile is dirty or layout has changed.
     /// Colors tiles based on type:
     /// - Obstacle: Black
     /// - Floor: White (tinted based on weight if weighted)
@@ -150,11 +149,6 @@ impl Tile {
     fn draw(&mut self, change_layout: bool, board_origin: Point, canvas: &mut Canvas<Window>) {
         if change_layout {
             self.cached_rectangle = None;
-            self.dirty = true;
-        }
-
-        if !self.dirty {
-            return;
         }
         let tile_rect = match self.cached_rectangle {
             Some(rect) => rect,
@@ -1089,6 +1083,8 @@ impl Board {
                         }
                     });
                     self.cached_grid.replace(Some(grid));
+                    canvas.set_draw_color(Color::RGB(87, 87, 81));
+                    canvas.clear();
                     self.draw(canvas);
                     canvas.present();
                     thread::sleep(Duration::from_millis(16));
@@ -1120,6 +1116,8 @@ impl Board {
                     }
                 });
                 self.cached_grid.replace(Some(grid));
+                canvas.set_draw_color(Color::RGB(87, 87, 81));
+                canvas.clear();
                 self.draw(canvas);
                 canvas.present();
             }
