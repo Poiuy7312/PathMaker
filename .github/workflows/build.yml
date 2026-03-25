@@ -54,7 +54,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config curl zip unzip tar
+          sudo apt-get install -y pkg-config curl zip unzip tar autoconf autoconf-archive automake libtool
           cd ..
           git clone https://github.com/Microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
