@@ -41,14 +41,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- Linux dependencies ---
-      - name: Install Linux dependencies
+      # --- Linux dependencies (vcpkg) ---
+      - name: Set up vcpkg cache (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/cache@v4
+        with:
+          path: ~/vcpkg/installed
+          key: vcpkg-${{ matrix.target }}-sdl2
+          restore-keys: vcpkg-${{ matrix.target }}-
+
+      - name: Install Linux dependencies (vcpkg)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libsdl2-dev libsdl2-ttf-dev \
-            pkg-config
+          sudo apt-get install -y pkg-config curl zip unzip tar
+          cd ..
+          git clone https://github.com/Microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          ./vcpkg/vcpkg install sdl2:x64-linux sdl2-ttf:x64-linux sdl2-image:x64-linux
+          echo "VCPKG_ROOT=$PWD/vcpkg" >> $GITHUB_ENV
+          echo "VCPKGRS_DYNAMIC=1" >> $GITHUB_ENV
 
       # --- macOS dependencies ---
       - name: Install macOS dependencies
@@ -93,8 +105,15 @@ jobs:
           key: ${{ matrix.target }}
 
       # --- Build ---
-      - name: Build (Linux / macOS)
-        if: runner.os != 'Windows'
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          export SDL2_LIB_DIR=$HOME/vcpkg/installed/x64-linux/lib
+          export SDL2_INCLUDE_DIR=$HOME/vcpkg/installed/x64-linux/include
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Build (Windows)
