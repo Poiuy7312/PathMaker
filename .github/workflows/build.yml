@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/vcpkg/installed
-          key: vcpkg-${{ matrix.target }}-sdl2-static
+          key: vcpkg-${{ matrix.target }}-sdl2
           restore-keys: vcpkg-${{ matrix.target }}-
 
       - name: Install Linux dependencies (vcpkg)
@@ -58,9 +58,10 @@ jobs:
           cd ..
           git clone https://github.com/Microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.sh -disableMetrics
-          ./vcpkg/vcpkg install sdl2:x64-linux-static sdl2-ttf:x64-linux-static sdl2-image:x64-linux-static
+          ./vcpkg/vcpkg install sdl2:x64-linux sdl2-ttf:x64-linux sdl2-image:x64-linux
           echo "VCPKG_ROOT=$PWD/vcpkg" >> $GITHUB_ENV
           echo "VCPKGRS_DYNAMIC=1" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$PWD/vcpkg/installed/x64-linux/lib/pkgconfig" >> $GITHUB_ENV
 
       # --- macOS dependencies ---
       - name: Install macOS dependencies
@@ -108,8 +109,8 @@ jobs:
       - name: Build (Linux)
         if: runner.os == 'Linux'
         run: |
-          export SDL2_LIB_DIR=$HOME/vcpkg/installed/x64-linux-static/lib
-          export SDL2_INCLUDE_DIR=$HOME/vcpkg/installed/x64-linux-static/include
+          export SDL2_LIB_DIR=$HOME/vcpkg/installed/x64-linux/lib
+          export SDL2_INCLUDE_DIR=$HOME/vcpkg/installed/x64-linux/include
           cargo build --release --target ${{ matrix.target }}
 
       - name: Build (macOS)
