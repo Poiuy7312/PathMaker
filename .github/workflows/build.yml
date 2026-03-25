@@ -54,7 +54,7 @@ jobs:
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
-          brew install sdl2 sdl2_ttf pkg-config harfbuzz
+          brew install sdl2 sdl2_ttf pkg-config
 
       # --- Windows dependencies (vcpkg) ---
       - name: Set up vcpkg cache (Windows)
@@ -119,12 +119,6 @@ jobs:
         run: |
           mkdir -p staging
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
-          for lib in libgraphite.3.dylib libgraphite2.3.dylib; do
-            if [ -f "$(brew --prefix)/lib/$lib" ]; then
-              cp "$(brew --prefix)/lib/$lib" staging/
-              break
-            fi
-          done
           install_name_tool -add_rpath "@loader_path" staging/${{ matrix.binary }}
           cat > staging/pathmaker << 'SCRIPT'
           #!/bin/bash
