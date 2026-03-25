@@ -149,6 +149,9 @@ impl Tile {
     fn draw(&mut self, change_layout: bool, board_origin: Point, canvas: &mut Canvas<Window>) {
         if change_layout {
             self.cached_rectangle = None;
+        } else if !self.dirty {
+            #[cfg(target_os = "macos")]
+            return;
         }
         let tile_rect = match self.cached_rectangle {
             Some(rect) => rect,
@@ -716,6 +719,7 @@ impl Board {
         building_max_size: u32,
         random_agents: bool,
     ) {
+        self.cached_background = None;
         if random_agents {
             self.get_random_agents();
         }
@@ -801,6 +805,16 @@ impl Board {
                         road_weight,
                         true,
                         Tile::calc_floor_color(road_weight),
+                    ));
+                } else if grid_allocation[idx] == 2 {
+                    grid.push(Tile::new(
+                        position,
+                        tile_type,
+                        tile_height,
+                        tile_width,
+                        255,
+                        true,
+                        BLACK,
                     ));
                 } else {
                     grid.push(Tile::new(

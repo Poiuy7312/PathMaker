@@ -344,18 +344,12 @@ impl Widget {
                     // Component already placed, just extend dimensions
                     if let Some(component) = self.buttons.get_mut(key) {
                         if col > *start_col {
-                            if !component.is_static() {
-                                component.change_width(
-                                    (col as u32 - *start_col as u32 + 1) * cell_width,
-                                );
-                            }
+                            component
+                                .change_width((col as u32 - *start_col as u32 + 1) * cell_width);
                         }
                         if row > *start_row {
-                            if !component.is_static() {
-                                component.change_height(
-                                    (row as u32 - *start_row as u32 + 1) * cell_height,
-                                );
-                            }
+                            component
+                                .change_height((row as u32 - *start_row as u32 + 1) * cell_height);
                         }
                     }
                 } else {
@@ -367,10 +361,8 @@ impl Widget {
 
                         found_components.insert(key, (row, col));
 
-                        if !component.is_static() {
-                            component.change_height(cell_height);
-                            component.change_width(cell_width);
-                        }
+                        component.change_height(cell_height);
+                        component.change_width(cell_width);
                     }
                 }
             }
