@@ -147,10 +147,10 @@ impl Tile {
     /// - Player: Green
     /// - Enemy: Red
     fn draw(&mut self, change_layout: bool, board_origin: Point, canvas: &mut Canvas<Window>) {
+        #[cfg(not(target_os = "macos"))]
         if change_layout {
             self.cached_rectangle = None;
         } else if !self.dirty {
-            #[cfg(target_os = "macos")]
             return;
         }
         let tile_rect = match self.cached_rectangle {
