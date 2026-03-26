@@ -57,6 +57,9 @@ jobs:
         run: |
           brew install cmake ninja pkg-config
           echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
+          # Remove system vcpkg so sdl2-sys doesn't pick it up instead of
+          # the one cargo-vcpkg builds into target/vcpkg
+          sudo rm -rf /usr/local/share/vcpkg /usr/local/bin/vcpkg
 
       - name: Install Windows build tools
         if: runner.os == 'Windows'
@@ -85,23 +88,16 @@ jobs:
       - name: Build vcpkg dependencies
         run: cargo vcpkg -v build --target ${{ matrix.target }}
 
-      # Find the actual location of .vcpkg-root so we can set VCPKG_ROOT correctly
-      - name: Debug vcpkg path
-        shell: bash
-        run: |
-          echo "=== Searching for .vcpkg-root ==="
-          find / -name ".vcpkg-root" 2>/dev/null || echo "not found anywhere"
-          echo "=== workspace/target contents ==="
-          ls -la ${{ github.workspace }}/target/ 2>/dev/null || echo "target dir not found"
-
-      - name: Set VCPKG_ROOT (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: echo "VCPKG_ROOT=${{ github.workspace }}\target\vcpkg" >> $env:GITHUB_ENV
-
+      # Linux/macOS: cargo-vcpkg builds into target/vcpkg
       - name: Set VCPKG_ROOT (Unix)
         if: runner.os != 'Windows'
         run: echo "VCPKG_ROOT=${{ github.workspace }}/target/vcpkg" >> $GITHUB_ENV
+
+      # Windows: cargo-vcpkg uses the pre-installed system vcpkg at C:\vcpkg
+      - name: Set VCPKG_ROOT (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
