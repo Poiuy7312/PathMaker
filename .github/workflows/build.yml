@@ -41,45 +41,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- Linux dependencies ---
-      - name: Install Linux dependencies
+      # vcpkg compiles SDL2 + SDL2_ttf from source so it needs cmake and
+      # a C compiler. On Linux we also need the X11/audio headers that SDL2
+      # depends on at compile time even when building statically.
+      - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libsdl2-dev libsdl2-ttf-dev libsdl2-ttf-2.0-0 \
-            pkg-config 
+          sudo apt-get install -y cmake build-essential pkg-config \
+            libx11-dev libxext-dev libxi-dev libxrandr-dev libxss-dev \
+            libasound2-dev libpulse-dev
 
-      # --- macOS dependencies ---
-      - name: Install macOS dependencies
+      - name: Install macOS build tools
         if: runner.os == 'macOS'
-        run: |
-          brew install sdl2 sdl2_ttf pkg-config
+        run: brew install cmake
 
-      # --- Windows dependencies (vcpkg) ---
-      - name: Set up vcpkg cache (Windows)
-        if: runner.os == 'Windows'
-        uses: actions/cache@v4
-        with:
-          path: C:\vcpkg\installed
-          key: vcpkg-${{ matrix.target }}-sdl2
-          restore-keys: vcpkg-${{ matrix.target }}-
-
-      - name: Install Windows dependencies (vcpkg)
+      - name: Install Windows build tools
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          vcpkg install sdl2:x64-windows-static-md sdl2-ttf:x64-windows-static-md sdl2-image:x64-windows-static-md
-          vcpkg integrate install
-          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-          echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
-
-      - name: Install pkg-config (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install pkgconfiglite -y
-          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
+        run: choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
 
       # --- Rust toolchain ---
       - name: Install Rust toolchain
@@ -87,23 +67,35 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install cargo-vcpkg
+        run: cargo install cargo-vcpkg
+
+      # Cache both cargo registry and the vcpkg build output.
+      # vcpkg compiles from source so this saves several minutes per run.
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/vcpkg
+          key: vcpkg-${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: vcpkg-${{ matrix.target }}-
+
+      # Reads [package.metadata.vcpkg] in Cargo.toml to know what to build
+      # and which triplet to use per platform.
+      - name: Build vcpkg dependencies
+        run: cargo vcpkg --target ${{ matrix.target }} build
+
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      # --- Build ---
-      - name: Build (Linux / macOS)
-        if: runner.os != 'Windows'
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          SDL2_LIB_DIR: C:\vcpkg\installed\x64-windows-static-md\lib
-          SDL2_INCLUDE_DIR: C:\vcpkg\installed\x64-windows-static-md\include
-        run: cargo build --release --target ${{ matrix.target }}
+      # --features ci-static enables use-vcpkg (defined in Cargo.toml [features])
+      # which tells sdl2-sys to use the vcpkg output instead of pkg-config.
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} --features ci-static
 
       # --- Package binary ---
       - name: Package binary (Unix)
@@ -123,7 +115,7 @@ jobs:
           if (Test-Path "src/assets") { Copy-Item -Recurse "src/assets" staging/ }
           Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}.zip"
 
-      # --- Upload artifact (always available for download) ---
+      # --- Upload artifact ---
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:

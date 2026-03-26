@@ -9,6 +9,9 @@ license = "MIT"
 name = "pathmaker"
 path = "src/main.rs"
 
+[features]
+ci-static = ["sdl2/use-vcpkg"]
+
 [dependencies]
 walkdir = "2.5.0"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -19,15 +22,23 @@ cap = "0.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cap = "0.1"
-sdl2 = { version = "0.38.0", features = ["ttf","image","static-link", "use-pkgconfig"]}
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(not(target_os = "windows"))'.dependencies]
 jemallocator = "0.5.4"
 jemalloc-ctl = "0.5.4"
-sdl2 = { version = "0.38.0", features = ["ttf","static-link","bundled", "use-pkgconfig"]}
 
 
-[target.'cfg(target_os = "macos")'.dependencies]
-jemallocator = "0.5.4"
-jemalloc-ctl = "0.5.4"
-sdl2 = { version = "0.38.0", features = ["ttf","static-link","bundled", "use-pkgconfig","use_mac_framework"]}
+[dependencies.sdl2]
+version = "0.38"
+default-features = false
+features = ["ttf","image"]
+
+[package.metadata.vcpkg]
+dependencies = ["sdl2", "sdl2-ttf","sdl2-image"]
+git = "https://github.com/microsoft/vcpkg"
+rev = "2024.05.24"
+
+[package.metadata.vcpkg.target]
+x86_64-pc-windows-msvc = { triplet = "x64-windows-static-md" }
+x86_64-unknown-linux-gnu = { triplet = "x64-linux" }
+aarch64-apple-darwin = { triplet = "arm64-osx" }
