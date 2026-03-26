@@ -22,7 +22,6 @@ extern crate sdl2;
 use jemalloc_ctl::{epoch, stats};
 
 // Cross-platform memory tracking allocator (used on Windows; jemalloc used on Unix)
-#[cfg(target_os = "windows")]
 use sdl2::image::LoadSurface;
 #[cfg(target_os = "windows")]
 #[global_allocator]
@@ -152,12 +151,9 @@ pub fn main() {
     //  .set_fullscreen(sdl2::video::FullscreenType::True)
     //   .unwrap();
     let data_dir = ensure_assets();
-    #[cfg(target_os = "windows")]
-    {
-        let icon_path = data_dir.join("Icon.svg");
-        let window_icon = Surface::from_file(&icon_path).unwrap();
-        window.set_icon(window_icon);
-    }
+    let icon_path = data_dir.join("Icon.svg");
+    let window_icon = Surface::from_file(&icon_path).unwrap();
+    window.set_icon(window_icon);
     let font_path = data_dir.join("fonts/OpenSans-Semibold.ttf");
     let mut canvas = window
         .into_canvas()
