@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 
-ci-static = ["sdl2/use-vcpkg"]
+ci-static = ["sdl2/use-vcpkg","sdl2/static-link"]
 
 [dependencies]
 walkdir = "2.5.0"
@@ -30,7 +30,7 @@ jemallocator = "0.5.4"
 jemalloc-ctl = "0.5.4"
 
 [target.aarch64-apple-darwin]
-rustflags = ["-C", "link-args=-mmacosx-version-min=15.0"]
+rustflags = ["-C", "link-args=-macosx-version-min=15.0"]
 
 
 [target.'cfg(not(target_os = "windows"))'.dependencies.sdl2]
