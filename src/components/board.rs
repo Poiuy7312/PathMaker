@@ -150,6 +150,7 @@ impl Tile {
         if change_layout {
             self.cached_rectangle = None;
         } else if !self.dirty {
+            #[cfg(target_os = "macos")]
             return;
         }
         let tile_rect = match self.cached_rectangle {
