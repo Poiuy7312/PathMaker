@@ -41,6 +41,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Set VCPKG_ROOT as early as possible so it is available for every
+      # subsequent step including the rust-cache and cargo build steps.
+      # Windows: cargo-vcpkg uses the pre-installed vcpkg at C:\vcpkg
+      # Linux/macOS: cargo-vcpkg builds into target/vcpkg
+      - name: Set VCPKG_ROOT (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+
+      - name: Set VCPKG_ROOT (Unix)
+        if: runner.os != 'Windows'
+        run: echo "VCPKG_ROOT=${{ github.workspace }}/target/vcpkg" >> $GITHUB_ENV
+
       - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
@@ -52,13 +65,14 @@ jobs:
             libdbus-1-dev libsystemd-dev libwayland-dev wayland-protocols \
             libxkbcommon-dev libegl1-mesa-dev libgles2-mesa-dev
 
+      # VCPKG_FORCE_SYSTEM_BINARIES tells vcpkg to use Homebrew's cmake/ninja
+      # rather than downloading its own, avoiding ARM64 architecture mismatches.
+      # Also remove the system vcpkg so sdl2-sys doesn't find it before target/vcpkg.
       - name: Install macOS build tools
         if: runner.os == 'macOS'
         run: |
           brew install cmake ninja pkg-config
           echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
-          # Remove system vcpkg so sdl2-sys doesn't pick it up instead of
-          # the one cargo-vcpkg builds into target/vcpkg
           sudo rm -rf /usr/local/share/vcpkg /usr/local/bin/vcpkg
 
       - name: Install Windows build tools
@@ -71,6 +85,13 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      # Rust cache goes before cargo-vcpkg so cached build scripts are compiled
+      # with VCPKG_ROOT already set in the environment.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
 
       - name: Install cargo-vcpkg
         run: cargo install cargo-vcpkg
@@ -85,25 +106,14 @@ jobs:
           key: vcpkg-${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: vcpkg-${{ matrix.target }}-
 
+      # Reads [package.metadata.vcpkg] in Cargo.toml to determine which
+      # libraries to build and which triplet to use per platform.
       - name: Build vcpkg dependencies
         run: cargo vcpkg -v build --target ${{ matrix.target }}
 
-      # Linux/macOS: cargo-vcpkg builds into target/vcpkg
-      - name: Set VCPKG_ROOT (Unix)
-        if: runner.os != 'Windows'
-        run: echo "VCPKG_ROOT=${{ github.workspace }}/target/vcpkg" >> $GITHUB_ENV
-
-      # Windows: cargo-vcpkg uses the pre-installed system vcpkg at C:\vcpkg
-      - name: Set VCPKG_ROOT (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
+      # --features ci-static activates sdl2/use-vcpkg so sdl2-sys uses the
+      # vcpkg output instead of pkg-config. Locally you just run cargo build
+      # normally and it uses your system SDL2 via pkg-config instead.
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --features ci-static
 
