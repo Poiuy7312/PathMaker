@@ -41,20 +41,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # autoconf-archive is needed by gperf which SDL2 pulls in on Linux.
-      # X11/audio headers are needed by SDL2 itself at compile time even when static.
+      # All packages here have been required by vcpkg at some point building
+      # SDL2+TTF+image and their transitive deps on Linux:
+      #   autoconf-archive  — gperf
+      #   libltdl-dev       — libxcrypt
+      #   libdbus-1-dev     — SDL2 dbus feature
+      #   libsystemd-dev    — libsystemd (SDL2 wayland dep)
+      #   libwayland-dev    — SDL2 wayland feature
+      #   libxkbcommon-dev  — SDL2 wayland keyboard input
+      #   libegl/gles       — SDL2 OpenGL/ES on wayland
       - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential pkg-config curl zip unzip tar libltdl-dev \
+          sudo apt-get install -y cmake build-essential pkg-config curl zip unzip tar \
             autoconf autoconf-archive automake libtool libltdl-dev \
             libx11-dev libxext-dev libxi-dev libxrandr-dev libxss-dev \
-            libasound2-dev libpulse-dev
+            libasound2-dev libpulse-dev \
+            libdbus-1-dev libsystemd-dev libwayland-dev wayland-protocols \
+            libxkbcommon-dev libegl1-mesa-dev libgles2-mesa-dev
 
       # VCPKG_FORCE_SYSTEM_BINARIES tells vcpkg to use Homebrew's cmake/ninja
-      # rather than downloading its own, which avoids ARM64 architecture mismatches
-      # on the macos-latest (Apple Silicon) runner.
+      # rather than downloading its own, which avoids ARM64 architecture
+      # mismatches on the macos-latest (Apple Silicon) runner.
       - name: Install macOS build tools
         if: runner.os == 'macOS'
         run: |
@@ -91,10 +100,6 @@ jobs:
       # libraries to build and which triplet to use per platform.
       - name: Build vcpkg dependencies
         run: cargo vcpkg -v build --target ${{ matrix.target }}
-
-      - name: Debug vcpkg path
-      if: runner.os == 'macOS'
-      run: find ${{ github.workspace }}/target/vcpkg -maxdepth 2 -type f -name ".vcpkg-root" 2>/dev/null || echo "not found, listing target/vcpkg:" && ls -la ${{ github.workspace }}/target/vcpkg/ 2>/dev/null || echo "target/vcpkg does not exist"
 
       # sdl2-sys looks for VCPKG_ROOT to find the vcpkg installation.
       # cargo-vcpkg puts it in target/vcpkg but doesn't set this var automatically.
