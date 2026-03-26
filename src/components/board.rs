@@ -143,7 +143,7 @@ impl Tile {
     ///
     /// Colors tiles based on type:
     /// - Obstacle: Black
-    /// - Floor: White (tinted based on weight if weighted)
+    /// - Floor: White (tinted based on weight if weighted tile)
     /// - Player: Green
     /// - Enemy: Red
     fn draw(&mut self, change_layout: bool, board_origin: Point, canvas: &mut Canvas<Window>) {
