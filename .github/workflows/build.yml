@@ -105,10 +105,7 @@ jobs:
             target/vcpkg
           key: vcpkg-${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: vcpkg-${{ matrix.target }}-
-          if: runner.os != 'Windows'
 
-      # Reads [package.metadata.vcpkg] in Cargo.toml to determine which
-      # libraries to build and which triplet to use per platform.
       - name: Clear vcpkg cache (Windows)
         if: runner.os == 'Windows'
         run: Remove-Item -Recurse -Force target/vcpkg -ErrorAction SilentlyContinue
