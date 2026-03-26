@@ -85,7 +85,7 @@ jobs:
       # Reads [package.metadata.vcpkg] in Cargo.toml to know what to build
       # and which triplet to use per platform.
       - name: Build vcpkg dependencies
-        run: cargo vcpkg --target ${{ matrix.target }} build
+        run: cargo vcpkg build --target ${{ matrix.target }} 
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
