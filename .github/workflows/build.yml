@@ -117,7 +117,7 @@ jobs:
             ~/.cargo/git
             target/vcpkg
           key: vcpkg-${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
-          restore-keys: vcpkg-${{ matrix.target }}
+          restore-keys: vcpkg-${{ matrix.target }}-
         
       - name: Install Windows dependencies (vcpkg)
         if: runner.os == 'Windows'
