@@ -48,7 +48,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential pkg-config curl zip unzip tar \
-            autoconf autoconf-archive automake libtool \
+            autoconf autoconf-archive automake libtool libltdl-dev \
             libx11-dev libxext-dev libxi-dev libxrandr-dev libxss-dev \
             libasound2-dev libpulse-dev
 
