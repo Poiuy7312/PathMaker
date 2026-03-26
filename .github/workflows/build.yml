@@ -94,9 +94,22 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Install cargo-vcpkg
+        if: runner.os != 'Windows'
         run: cargo install cargo-vcpkg
 
-      - name: Cache vcpkg
+      
+      # --- Windows dependencies (vcpkg) ---
+      - name: Cache vcpkg (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\vcpkg\installed
+          key: vcpkg-${{ matrix.target }}-sdl2
+          restore-keys: vcpkg-${{ matrix.target }}-
+
+
+      - name: Cache vcpkg (Unix)
+        if: runner.os != 'Windows'
         uses: actions/cache@v4
         with:
           path: |
@@ -104,20 +117,39 @@ jobs:
             ~/.cargo/git
             target/vcpkg
           key: vcpkg-${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
-          restore-keys: vcpkg-${{ matrix.target }}-
-
-      - name: Clear vcpkg cache (Windows)
+          restore-keys: vcpkg-${{ matrix.target }}
+        
+      - name: Install Windows dependencies (vcpkg)
         if: runner.os == 'Windows'
-        run: Remove-Item -Recurse -Force target/vcpkg -ErrorAction SilentlyContinue
+        shell: pwsh
+        run: |
+          vcpkg install sdl2:x64-windows-static-md sdl2-ttf:x64-windows-static-md sdl2-image:x64-windows-static-md
+          vcpkg integrate install
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
 
-      - name: Build vcpkg dependencies
+      - name: Install pkg-config (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install pkgconfiglite -y
+          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      - name: Build vcpkg dependencies (Unix)
+        if: runner.os != 'Windows'
         run: cargo vcpkg -v build --target ${{ matrix.target }}
 
-      # --features ci-static activates sdl2/use-vcpkg so sdl2-sys uses the
-      # vcpkg output instead of pkg-config. Locally you just run cargo build
-      # normally and it uses your system SDL2 via pkg-config instead.
-      - name: Build
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
         run: cargo build --release --target ${{ matrix.target }} --features ci-static
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          SDL2_LIB_DIR: C:\vcpkg\installed\x64-windows-static-md\lib
+          SDL2_INCLUDE_DIR: C:\vcpkg\installed\x64-windows-static-md\include
+        run: cargo build --release --target ${{ matrix.target }}
 
       # --- Package binary ---
       - name: Package binary (Unix)
@@ -171,3 +203,32 @@ jobs:
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
+
+
+
+
+      - name: Install Windows dependencies (vcpkg)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install sdl2:x64-windows-static-md sdl2-ttf:x64-windows-static-md sdl2-image:x64-windows-static-md
+          vcpkg integrate install
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+      - name: Install pkg-config (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install pkgconfiglite -y
+          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          SDL2_LIB_DIR: C:\vcpkg\installed\x64-windows-static-md\lib
+          SDL2_INCLUDE_DIR: C:\vcpkg\installed\x64-windows-static-md\include
+        run: cargo build --release --target ${{ matrix.target }}
+
+ 
+

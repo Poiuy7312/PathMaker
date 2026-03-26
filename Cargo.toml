@@ -10,7 +10,8 @@ name = "pathmaker"
 path = "src/main.rs"
 
 [features]
-ci-static = ["sdl2/use-vcpkg", "sdl2/static-link"]
+
+ci-static = ["sdl2/use-vcpkg"]
 
 [dependencies]
 walkdir = "2.5.0"
@@ -22,6 +23,7 @@ cap = "0.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 cap = "0.1"
+sdl2 = { version = "0.38.0", features = ["ttf","image","static-link", "use-pkgconfig"]}
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 jemallocator = "0.5.4"
@@ -31,7 +33,7 @@ jemalloc-ctl = "0.5.4"
 rustflags = ["-C", "link-args=-mmacosx-version-min=15.0"]
 
 
-[dependencies.sdl2]
+[target.'cfg(not(target_os = "windows"))'.dependencies.sdl2]
 version = "0.38"
 default-features = false
 features = ["ttf","image"]
@@ -42,6 +44,5 @@ git = "https://github.com/microsoft/vcpkg"
 rev = "2025.12.12"
 
 [package.metadata.vcpkg.target]
-x86_64-pc-windows-msvc = { triplet = "x64-windows-static" }
 x86_64-unknown-linux-gnu = { triplet = "x64-linux" }
 aarch64-apple-darwin = { triplet = "arm64-osx" }
