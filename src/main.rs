@@ -815,6 +815,7 @@ pub fn main() {
         {
             canvas.set_draw_color(Color::RGB(87, 87, 81));
             canvas.clear();
+            game_board.draw(&mut canvas);
         }
         let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
         let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
