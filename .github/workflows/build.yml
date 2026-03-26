@@ -41,21 +41,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # vcpkg compiles SDL2 + SDL2_ttf from source so it needs cmake and
-      # a C compiler. On Linux we also need the X11/audio headers that SDL2
-      # depends on at compile time even when building statically.
+      # autoconf/automake/libtool are needed by libxcrypt which SDL2 pulls in on Linux.
+      # X11/audio headers are needed by SDL2 itself at compile time even when static.
       - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential pkg-config \
+          sudo apt-get install -y cmake build-essential pkg-config curl zip unzip tar \
+            autoconf automake libtool \
             libx11-dev libxext-dev libxi-dev libxrandr-dev libxss-dev \
             libasound2-dev libpulse-dev
 
+      # VCPKG_FORCE_SYSTEM_BINARIES tells vcpkg to use Homebrew's cmake/ninja
+      # rather than downloading its own, which avoids ARM64 architecture mismatches
+      # on the macos-latest (Apple Silicon) runner.
       - name: Install macOS build tools
         if: runner.os == 'macOS'
-        run: brew install cmake
+        run: |
+          brew install cmake ninja pkg-config
+          echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
 
+      # cmake is needed for vcpkg to compile SDL2 from source on Windows.
       - name: Install Windows build tools
         if: runner.os == 'Windows'
         shell: pwsh
@@ -70,9 +76,9 @@ jobs:
       - name: Install cargo-vcpkg
         run: cargo install cargo-vcpkg
 
-      # Cache both cargo registry and the vcpkg build output.
-      # vcpkg compiles from source so this saves several minutes per run.
-      - name: Cache
+      # Cache the vcpkg build output — compiling SDL2+TTF+image from source
+      # takes several minutes, so this saves a lot of time on repeat runs.
+      - name: Cache vcpkg
         uses: actions/cache@v4
         with:
           path: |
@@ -82,18 +88,19 @@ jobs:
           key: vcpkg-${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
           restore-keys: vcpkg-${{ matrix.target }}-
 
-      # Reads [package.metadata.vcpkg] in Cargo.toml to know what to build
-      # and which triplet to use per platform.
+      # Reads [package.metadata.vcpkg] in Cargo.toml to determine which
+      # libraries to build and which triplet to use per platform.
       - name: Build vcpkg dependencies
-        run: cargo vcpkg --verbose build --target ${{ matrix.target }} 
+        run: cargo vcpkg build -v --target ${{ matrix.target }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
 
-      # --features ci-static enables use-vcpkg (defined in Cargo.toml [features])
-      # which tells sdl2-sys to use the vcpkg output instead of pkg-config.
+      # --features ci-static activates sdl2/use-vcpkg so sdl2-sys uses the
+      # vcpkg output instead of pkg-config. Locally you just run cargo build
+      # normally and it uses your system SDL2 via pkg-config instead.
       - name: Build
         run: cargo build --release --target ${{ matrix.target }} --features ci-static
 

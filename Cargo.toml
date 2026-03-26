@@ -34,9 +34,9 @@ default-features = false
 features = ["ttf","image"]
 
 [package.metadata.vcpkg]
-dependencies = ["sdl2", "sdl2-ttf","sdl2-image"]
+dependencies = ["sdl2", "sdl2-ttf", "sdl2-image"]
 git = "https://github.com/microsoft/vcpkg"
-rev = "2024.05.24"
+rev = "2025.12.12"
 
 [package.metadata.vcpkg.target]
 x86_64-pc-windows-msvc = { triplet = "x64-windows-static-md" }
