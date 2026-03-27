@@ -400,7 +400,7 @@ impl Widget {
             self.set_widget_layout();
         }
 
-        #[cfg(target_os = "macos")]
+        #[cfg(not(target_os = "windows"))]
         {
             let rectangle = self.get_rect();
             let outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);

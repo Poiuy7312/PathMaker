@@ -1086,8 +1086,11 @@ impl Board {
                         }
                     });
                     self.cached_grid.replace(Some(grid));
-                    canvas.set_draw_color(Color::RGB(87, 87, 81));
-                    canvas.clear();
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        canvas.set_draw_color(Color::RGB(87, 87, 81));
+                        canvas.clear();
+                    }
                     self.draw(canvas);
                     canvas.present();
                     thread::sleep(Duration::from_millis(16));
@@ -1119,8 +1122,11 @@ impl Board {
                     }
                 });
                 self.cached_grid.replace(Some(grid));
-                canvas.set_draw_color(Color::RGB(87, 87, 81));
-                canvas.clear();
+                #[cfg(not(target_os = "windows"))]
+                {
+                    canvas.set_draw_color(Color::RGB(87, 87, 81));
+                    canvas.clear();
+                }
                 self.draw(canvas);
                 canvas.present();
             }
@@ -1161,7 +1167,7 @@ impl Board {
             canvas.set_draw_color(WHITE);
             canvas.fill_rect(self.get_rect()).unwrap();
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(not(target_os = "windows"))]
         {
             canvas.set_draw_color(WHITE);
             canvas.fill_rect(self.get_rect()).unwrap();
