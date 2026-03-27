@@ -805,6 +805,16 @@ impl Board {
                         true,
                         Tile::calc_floor_color(road_weight),
                     ));
+                } else if grid_allocation[idx] == 2 {
+                    grid.push(Tile::new(
+                        position,
+                        tile_type,
+                        tile_height,
+                        tile_width,
+                        0,
+                        true,
+                        BLACK,
+                    ));
                 } else {
                     grid.push(Tile::new(
                         position,
