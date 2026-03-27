@@ -388,7 +388,7 @@ impl Widget {
         mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
         if !self.drawn {
             let rectangle = self.get_rect();
             let outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);

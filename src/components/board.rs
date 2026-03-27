@@ -150,7 +150,7 @@ impl Tile {
         if change_layout {
             self.cached_rectangle = None;
         } else if !self.dirty {
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "windows")]
             return;
         }
         let tile_rect = match self.cached_rectangle {
@@ -1162,7 +1162,7 @@ impl Board {
     /// Iterates through all tiles and draws dirty tiles.
     /// Updates the cached grid after drawing.
     pub fn draw<'a>(&self, canvas: &mut Canvas<Window>) {
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "windows")]
         if self.cached_background.is_none() {
             canvas.set_draw_color(WHITE);
             canvas.fill_rect(self.get_rect()).unwrap();
