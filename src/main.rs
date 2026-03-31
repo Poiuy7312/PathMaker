@@ -22,7 +22,6 @@ extern crate sdl2;
 use jemalloc_ctl::{epoch, stats};
 
 // Cross-platform memory tracking allocator (used on Windows; jemalloc used on Unix)
-#[cfg(target_os = "windows")]
 use sdl2::image::LoadSurface;
 #[cfg(target_os = "windows")]
 #[global_allocator]
@@ -137,7 +136,7 @@ pub fn main() {
     let window_height: u32 = settings.window_height;
     let debug_height = window_height / 4;
     let control_width = window_width - board_width;
-    let control_height = window_height - debug_height;
+    let control_height = window_height;
     let tiles_x: u32 = settings.tiles_x; // Replace with settings.tiles_x
     let tiles_y: u32 = settings.tiles_y;
     let sdl_context = sdl2::init().unwrap();
@@ -156,12 +155,9 @@ pub fn main() {
     //  .set_fullscreen(sdl2::video::FullscreenType::True)
     //   .unwrap();
     let data_dir = ensure_assets();
-    #[cfg(target_os = "windows")]
-    {
-        let icon_path = data_dir.join("Icon.svg");
-        let window_icon = Surface::from_file(&icon_path).unwrap();
-        window.set_icon(window_icon);
-    }
+    let icon_path = data_dir.join("Icon.svg");
+    let window_icon = Surface::from_file(&icon_path).unwrap();
+    window.set_icon(window_icon);
     let font_path = data_dir.join("fonts/OpenSans-Semibold.ttf");
     let mut canvas = window
         .into_canvas()
@@ -175,6 +171,8 @@ pub fn main() {
     let mut select_file: bool = false; // Check if select file widget is active
     let mut save_file: bool = false; // Check if save file widget is active
     let mut change_gen_sliders = false;
+    let mut display_visual_path_result = false;
+    let mut results: String = String::new();
 
     let ttf_context: ttf::Sdl2TtfContext = ttf::init().unwrap();
 
@@ -590,6 +588,14 @@ pub fn main() {
         cached_texture: None,
     });
 
+    let mut debug_window = Box::new(DisplayBox::new(
+        (window_width - control_width) as i32,
+        (window_height - debug_height) as i32,
+        control_width,
+        debug_height,
+        "Debug_Window",
+    ));
+
     let board_control_layout: Vec<Vec<&'static str>> = vec![
         vec!["Upload Map"],
         vec!["Upload Map"],
@@ -610,6 +616,12 @@ pub fn main() {
         vec!["RA_Select"],
         vec!["START"],
         vec!["START"],
+        vec!["Debug_Window"],
+        vec!["Debug_Window"],
+        vec!["Debug_Window"],
+        vec!["Debug_Window"],
+        vec!["Debug_Window"],
+        vec!["Debug_Window"],
     ];
 
     let iteration_gen_value: Box<dyn Interface> = Box::new(Slider {
@@ -648,6 +660,7 @@ pub fn main() {
         ("Weighted_Tile_Count", weight_count),
         ("Iterations", iteration_gen_value),
         ("Gen_Grid", generate_grid),
+        ("Debug_Window", debug_window),
     ]);
 
     let mut board_control_widget: Widget = Widget {
@@ -796,17 +809,6 @@ pub fn main() {
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let mut debug_window = DisplayBox::new(
-        (window_width - control_width) as i32,
-        (window_height - debug_height) as i32,
-        control_width,
-        debug_height,
-        "Debug_Window",
-    );
-    debug_window.add_line("Output");
-    debug_window.add_line("----------------");
-    debug_window.active = true;
-
     let mut game_board: Board = Board {
         location: Point::new(0, 0),
         width: board_width,
@@ -831,24 +833,27 @@ pub fn main() {
     let (mut window_width, mut window_height) =
         canvas.output_size().expect("Unable to obtain window size");
     'running: loop {
-        #[cfg(target_os = "macos")]
+        let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
+        let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
+        /*#[cfg(not(target_os = "windows"))]
         {
             canvas.set_draw_color(Color::RGB(87, 87, 81));
             canvas.clear();
-        }
-        let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
-        let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
+            game_board.draw(&mut canvas);
+            board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
+        }*/
         /*-------- User UI -------- */
         let current_size = canvas.output_size().expect("Unable to obtain window size");
+        if game_board.height > current_size.1 || game_board.width > board_width {
+            let window = canvas.window_mut();
+            window.maximize();
+        }
         if (window_width, window_height) != current_size {
             (window_width, window_height) = current_size;
             canvas.set_draw_color(Color::RGB(87, 87, 81));
             canvas.clear();
 
-            game_board.change_location(Point::new(
-                (window_width as i32 - board_width as i32) / 2,
-                (window_height as i32 - board_height as i32) / 2,
-            ));
+            game_board.change_location(Point::new(0, 0));
 
             game_board.draw(&mut canvas);
             board_control_widget.change_location(Point::new(
@@ -867,29 +872,8 @@ pub fn main() {
                 save_widget.get_location().y(),
             ));
             save_widget.change_drawn(false);
-
+            //#[cfg(target_os = "windows")]
             board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
-        }
-
-        if run_game_board {
-            let results = game_board.run_board(
-                &mut canvas,
-                &settings.selected_algorithm,
-                settings.enable_doubling_experiment,
-                settings.enable_dynamic_generation,
-                settings.enable_random_agents,
-                settings.gen_obstacles,
-                settings.weight_count,
-                settings.iterations,
-                settings.weight.max(1),
-                settings.gen_mode,
-                true,
-            );
-            debug_window.clear();
-            for line in results.lines() {
-                debug_window.add_line(line);
-            }
-            run_game_board = false;
         }
 
         /*-------- Updates User UI Depending on State -------- */
@@ -948,6 +932,7 @@ pub fn main() {
             save_widget.change_active(false);
             /*------ Board Editing Components ------*/
 
+            //#[cfg(target_os = "windows")]
             board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
 
             board_control_widget.change_active(true);
@@ -959,8 +944,59 @@ pub fn main() {
             }
         }
 
-        if debug_window.active {
-            debug_window.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
+        if run_game_board {
+            match game_board.run_board(
+                &mut canvas,
+                &settings.selected_algorithm,
+                settings.enable_doubling_experiment,
+                settings.enable_dynamic_generation,
+                settings.enable_random_agents,
+                settings.gen_obstacles,
+                settings.weight_count,
+                settings.iterations,
+                settings.weight.max(1),
+                settings.gen_mode,
+            ) {
+                Ok(value) => {
+                    display_visual_path_result = true;
+                    run_game_board = false;
+                    results = value;
+                }
+                Err(e) => {
+                    display_visual_path_result = false;
+                    run_game_board = false;
+                    if let Some(d_window) = board_control_widget.buttons.get_mut("Debug_Window") {
+                        if let Some(d_window) = d_window.as_any().downcast_mut::<DisplayBox>() {
+                            d_window.clear();
+
+                            d_window.add_line(e);
+                        }
+                    }
+                }
+            }
+        }
+
+        if display_visual_path_result {
+            match game_board.display_path_result() {
+                true => {
+                    game_board.reset_board();
+                    game_board.draw(&mut canvas);
+                    if let Some(d_window) = board_control_widget.buttons.get_mut("Debug_Window") {
+                        if let Some(d_window) = d_window.as_any().downcast_mut::<DisplayBox>() {
+                            d_window.clear();
+                            for line in results.lines() {
+                                d_window.add_line(line);
+                            }
+                        }
+                    }
+                    display_visual_path_result = false;
+                }
+                false => {
+                    game_board.draw(&mut canvas);
+                    canvas.present();
+                    continue;
+                }
+            }
         }
         /*------ Board Editing Components ------*/
 
@@ -987,6 +1023,7 @@ pub fn main() {
                                         TileType::Enemy => {}
                                         TileType::Floor => {}
                                         TileType::Obstacle => {}
+                                        TileType::Path => {}
                                         _ => {
                                             game_board.selected_piece_type =
                                                 TileType::Weighted(settings.weight)
@@ -1114,9 +1151,16 @@ pub fn main() {
                                             if !fileDialog::is_directory(&new_result) {
                                                 file_select_widget
                                                     .change_result(Some(home_dir.clone()));
-                                                game_board = game_board.load_board_file(
-                                                    fileDialog::read_file(&new_result),
-                                                );
+                                                match scanner::board_from(
+                                                    &new_result,
+                                                    game_board.height,
+                                                    game_board.tile_amount_x,
+                                                ) {
+                                                    Ok(board) => {
+                                                        game_board = board;
+                                                    }
+                                                    Err(_) => {}
+                                                }
                                                 select_file = false;
                                                 canvas.set_draw_color(Color::RGB(87, 87, 81));
                                                 canvas.clear();
@@ -1149,6 +1193,16 @@ pub fn main() {
                         "START" => {
                             run_game_board = true;
 
+                            if let Some(d_window) =
+                                board_control_widget.buttons.get_mut("Debug_Window")
+                            {
+                                if let Some(d_window) =
+                                    d_window.as_any().downcast_mut::<DisplayBox>()
+                                {
+                                    d_window.clear();
+                                }
+                            }
+
                             /*let cwd = env::current_dir().unwrap();
                             let data_path = cwd.join("testing.csv");
                             benchmarks::run_overall_benchmark(
@@ -1162,6 +1216,7 @@ pub fn main() {
                             game_board.draw(&mut canvas);
                             game_board.change_active(false);
                             select_file = true;
+                            game_board.draw(&mut canvas);
                         }
                         "Save Map" => {
                             save_file = true;
@@ -1311,7 +1366,6 @@ pub fn main() {
         /*-------- User UI --------- */
 
         /*--------  Key Controls --------*/
-        canvas.present();
         for event in event_pump.poll_iter() {
             match event {
                 Event::KeyDown {
@@ -1455,11 +1509,15 @@ pub fn main() {
                     }
                 }
                 Event::MouseWheel { y, .. } => {
-                    if debug_window.active {
-                        if y > 0 {
-                            debug_window.scroll_up();
-                        } else if y < 0 {
-                            debug_window.scroll_down();
+                    if let Some(d_window) = board_control_widget.buttons.get_mut("Debug_Window") {
+                        if d_window.is_active() {
+                            if let Some(d_window) = d_window.as_any().downcast_mut::<DisplayBox>() {
+                                if y > 0 {
+                                    d_window.scroll_up();
+                                } else if y < 0 {
+                                    d_window.scroll_down();
+                                }
+                            }
                         }
                     }
                 }
@@ -1481,6 +1539,7 @@ pub fn main() {
         /*-------- Updates values for board Generation -------- */
 
         // Cap at ~60 FPS
+        canvas.present();
     }
 }
 
@@ -1909,7 +1968,7 @@ mod tests {
 
         let file_path = tmp_dir.join("test_board_roundtrip.json");
         let json = std::fs::read_to_string(&file_path).unwrap();
-        let loaded = board.load_board_file(json);
+        let loaded = board.load_board_file(json).unwrap();
 
         assert_eq!(loaded.tile_amount_x, board.tile_amount_x);
         assert_eq!(loaded.tile_amount_y, board.tile_amount_y);
@@ -2179,7 +2238,7 @@ mod tests {
         let content = "hello, pathmaker!".to_string();
         fileDialog::save_file(tmp_dir.to_str().unwrap().to_string(), content.clone());
         let actual_file = tmp_dir.join("test.json");
-        let read_back = fileDialog::read_file(actual_file.to_str().unwrap());
+        let read_back = fileDialog::read_file(actual_file.to_str().unwrap()).unwrap();
         assert_eq!(read_back, content);
         std::fs::remove_dir_all(&tmp_dir).ok();
     }

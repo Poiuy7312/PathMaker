@@ -65,7 +65,7 @@ pub fn is_directory(path: &str) -> bool {
 /// # Returns
 /// A DirectoryNode representing the path and its immediate children
 fn build_shallow(path: &Path) -> DirectoryNode {
-    let allowed_extension = OsStr::new("json");
+    let allowed_extension = (OsStr::new("json"), OsStr::new("map"));
     let name = path
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -96,7 +96,7 @@ fn build_shallow(path: &Path) -> DirectoryNode {
                             children: Vec::new(),
                         });
                     } else if let Some(ext) = p.extension() {
-                        if ext == allowed_extension {
+                        if ext == allowed_extension.0 || ext == allowed_extension.1 {
                             node.children.push(DirectoryNode {
                                 name: child_name,
                                 path: p,
@@ -289,14 +289,13 @@ fn print_tree(node: &DirectoryNode, indent: usize) {
 ///
 /// # Returns
 /// File contents as a string, or an error message
-pub fn read_file(path: &str) -> String {
+pub fn read_file(path: &str) -> Result<String, &'static str> {
     let path = Path::new(&path);
-    println!("Reading File: {:#?}", path);
     match read_to_string(path) {
         Ok(value) => {
-            return value;
+            return Ok(value);
         }
-        Err(e) => return format!("ERROR: {}", e),
+        Err(e) => return Err("Failed to read file"),
     }
 }
 
@@ -384,7 +383,7 @@ mod tests {
     #[test]
     fn test_read_file_nonexistent() {
         let result = read_file("/tmp/this_file_does_not_exist_xyz.json");
-        assert!(result.starts_with("ERROR"));
+        assert!(result.is_err());
     }
 
     #[test]
@@ -392,7 +391,7 @@ mod tests {
         let dir = std::env::temp_dir();
         let path = dir.join("pathmaker_test_read.txt");
         std::fs::write(&path, "hello world").unwrap();
-        let result = read_file(path.to_str().unwrap());
+        let result = read_file(path.to_str().unwrap()).unwrap();
         assert_eq!(result, "hello world");
         let _ = std::fs::remove_file(&path);
     }

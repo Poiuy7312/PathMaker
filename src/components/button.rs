@@ -256,11 +256,11 @@ impl Interface for StandardButton {
     ) {
         let hovering = self.mouse_over_component(mouse_position);
         if self.is_hovering() != hovering {
-            #[cfg(not(target_os = "macos"))]
+            //#[cfg(target_os = "windows")]
             self.change_drawn(false);
             self.change_hover(hovering);
         }
-        #[cfg(not(target_os = "macos"))]
+        //#[cfg(target_os = "windows")]
         if self.is_drawn() {
             return;
         }
@@ -285,27 +285,19 @@ impl Interface for StandardButton {
         if hovering {
             canvas.set_draw_color(WHITE);
             canvas.fill_rect(button_background).unwrap();
-            font_surface = if self.cached_texture.is_none() {
-                font.render(&self.text)
-                    .blended(BLACK)
-                    .map_err(|e| e.to_string())
-                    .unwrap()
-            } else {
-                // Use cached texture
-                return;
-            }
+            font_surface = font
+                .render(&self.text)
+                .blended(BLACK)
+                .map_err(|e| e.to_string())
+                .unwrap()
         } else {
             canvas.set_draw_color(self.background_color);
             canvas.fill_rect(button_background).unwrap();
-            font_surface = if self.cached_texture.is_none() {
-                font.render(&self.text)
-                    .blended(self.text_color)
-                    .map_err(|e| e.to_string())
-                    .unwrap()
-            } else {
-                // Use cached texture
-                return;
-            }
+            font_surface = font
+                .render(&self.text)
+                .blended(self.text_color)
+                .map_err(|e| e.to_string())
+                .unwrap()
         }
 
         let font_texture: Texture<'_> = texture_creator
@@ -1127,7 +1119,7 @@ impl Interface for CheckBox {
         mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        #[cfg(not(target_os = "macos"))]
+        //#[cfg(target_os = "windows")]
         if self.is_drawn() && !self.mouse_over_component(mouse_position) {
             return; // Skip if already drawn and not hovering
         }

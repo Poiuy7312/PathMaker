@@ -3,7 +3,7 @@ use std::cell::RefCell;
 
 use sdl2::pixels::Color;
 use sdl2::rect::{Point, Rect};
-use sdl2::render::{Canvas, TextureCreator};
+use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::ttf;
 use sdl2::video::{Window, WindowContext};
 
@@ -24,6 +24,7 @@ pub struct DisplayBox {
     pub scroll_offset: RefCell<i32>,
     pub max_lines_visible: usize,
     pub line_height: i32,
+    pub cached_texture: RefCell<Option<Texture<'static>>>,
 }
 
 impl DisplayBox {
@@ -43,12 +44,14 @@ impl DisplayBox {
             scroll_offset: RefCell::new(0),
             max_lines_visible,
             line_height,
+            cached_texture: RefCell::new(None),
         }
     }
 
     pub fn clear(&mut self) {
         self.current_display.clear();
         *self.scroll_offset.borrow_mut() = 0;
+        self.change_drawn(false);
     }
 
     pub fn add_line(&mut self, new_str: &str) {
@@ -56,6 +59,7 @@ impl DisplayBox {
         if self.current_display.len() > 1000 {
             self.current_display.remove(0);
         }
+        self.change_drawn(false);
     }
 
     pub fn scroll_up(&mut self) {
@@ -63,6 +67,7 @@ impl DisplayBox {
         if *offset > 0 {
             *offset -= 1;
         }
+        self.change_drawn(false);
     }
 
     pub fn scroll_down(&mut self) {
@@ -72,6 +77,7 @@ impl DisplayBox {
         if *offset < total_lines - visible {
             *offset += 1;
         }
+        self.change_drawn(false);
     }
 
     pub fn get_rect(&self) -> Rect {
@@ -102,15 +108,18 @@ impl Component for DisplayBox {
 
     fn change_location(&mut self, new_location: Point) {
         self.location = new_location;
+        self.change_drawn(false);
     }
 
     fn change_width(&mut self, new_width: u32) {
         self.width = new_width;
         self.max_lines_visible = (self.height as i32 / self.line_height) as usize;
+        self.change_drawn(false);
     }
 
     fn change_active(&mut self, new_value: bool) {
         self.active = new_value;
+        self.change_drawn(false);
     }
 
     fn is_active(&self) -> bool {
@@ -132,6 +141,7 @@ impl Component for DisplayBox {
     fn change_height(&mut self, new_height: u32) {
         self.height = new_height;
         self.max_lines_visible = (new_height as i32 / self.line_height) as usize;
+        self.change_drawn(false);
     }
 }
 
@@ -186,9 +196,12 @@ impl Interface for DisplayBox {
         &self,
         canvas: &mut Canvas<Window>,
         texture_creator: &'a TextureCreator<WindowContext>,
-        mouse_position: Point,
+        _: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
+        if self.is_drawn() {
+            return;
+        }
         let rect = self.get_rect();
 
         canvas.set_draw_color(self.background_color);
@@ -214,12 +227,8 @@ impl Interface for DisplayBox {
         {
             let y = start_y + ((i - start_idx) as i32) * self.line_height;
 
-            let font_size = 16;
             let text_width = (line.len() as u32) * 8;
             let text_rect = if text_width > max_width {
-                let chars_to_show = (max_width / 8) as usize;
-                let truncated: String =
-                    line.chars().take(chars_to_show.saturating_sub(3)).collect();
                 Rect::new(rect.x() + 5, y, max_width, self.line_height as u32)
             } else {
                 Rect::new(rect.x() + 5, y, text_width, self.line_height as u32)
@@ -227,10 +236,9 @@ impl Interface for DisplayBox {
 
             match font.render(line).blended(self.text_color) {
                 Ok(font_surface) => {
-                    if let Ok(font_texture) =
-                        texture_creator.create_texture_from_surface(&font_surface)
-                    {
-                        let _ = canvas.copy(&font_texture, None, text_rect);
+                    let font_texture = texture_creator.create_texture_from_surface(&font_surface);
+                    if font_texture.is_ok() {
+                        let _ = canvas.copy(&font_texture.unwrap(), None, text_rect);
                     }
                 }
                 Err(_) => {}
@@ -253,5 +261,7 @@ impl Interface for DisplayBox {
             canvas.set_draw_color(SECONDARY_COLOR);
             canvas.fill_rect(scrollbar).unwrap();
         }
+
+        self.change_drawn(true);
     }
 }
