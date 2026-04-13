@@ -1773,6 +1773,7 @@ mod tests {
         });
 
         while !board.display_path_result() {}
+        board.clear_path();
 
         let grid = board.cached_grid.borrow();
         let path_count = grid
