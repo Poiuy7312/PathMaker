@@ -22,7 +22,8 @@ pub mod file_explorer;
 pub mod inputbox;
 /// Widget container for organizing interface components in grid layouts
 pub mod widget;
-//pub mod selectbox;
+
+pub mod displaybox;
 
 /// Core trait that all interactive UI components must implement.
 ///

@@ -55,6 +55,8 @@ pub enum TileType {
     Enemy,
     /// Floor tile with custom traversal weight (higher = slower)
     Weighted(u8),
+    /// Path tile (rendered blue)
+    Path,
 }
 
 /// Represents a single tile on the game board.
@@ -150,6 +152,7 @@ impl Tile {
         if change_layout {
             self.cached_rectangle = None;
         } else if !self.dirty {
+
             #[cfg(target_os = "windows")]
             return;
         }
@@ -158,28 +161,13 @@ impl Tile {
             None => self.get_rect(board_origin),
         };
         self.cached_rectangle = Some(tile_rect);
-        match self.tile_type {
-            TileType::Obstacle => {
-                canvas.set_draw_color(self.cached_color);
-                canvas.fill_rect(tile_rect).unwrap();
-                self.dirty = false;
-            }
-            TileType::Floor | TileType::Weighted(_) => {
-                canvas.set_draw_color(self.cached_color);
-                canvas.fill_rect(tile_rect).unwrap();
-                self.dirty = false;
-            }
-            TileType::Player => {
-                canvas.set_draw_color(self.cached_color);
-                canvas.fill_rect(tile_rect).unwrap();
-                self.dirty = false;
-            }
-            TileType::Enemy => {
-                canvas.set_draw_color(self.cached_color);
-                canvas.fill_rect(tile_rect).unwrap();
-                self.dirty = false;
-            }
-        }
+
+        let c = self.cached_color;
+
+        canvas.set_draw_color(c);
+        canvas.fill_rect(tile_rect).unwrap();
+
+        self.dirty = false;
     }
 
     /// Check if this tile can be walked through.
@@ -204,7 +192,8 @@ impl Tile {
                 TileType::Enemy => self.cached_color = RED,
                 TileType::Player => self.cached_color = GREEN,
                 TileType::Floor => self.cached_color = Self::calc_floor_color(self.weight),
-                _ => {}
+                TileType::Path => self.cached_color = BLUE,
+                TileType::Weighted(weight) => self.cached_color = Self::calc_floor_color(weight),
             }
         }
     }
@@ -299,6 +288,7 @@ impl<'de> Deserialize<'de> for Board {
                         "Obstacle" => TileType::Obstacle,
                         "Player" => TileType::Player,
                         "Enemy" => TileType::Enemy,
+                        "Path" => TileType::Path,
                         _ => TileType::Floor,
                     };
                     let weight = weight_str.parse::<u8>().unwrap();
@@ -397,7 +387,6 @@ impl Component for Board {
     /// the currently selected piece type.
     fn on_click(&mut self, mouse_point: Point) -> (bool, Option<String>) {
         let rect = self.get_rect();
-        self.cached_background = Some(rect);
         if !self.active || !rect.contains_point(mouse_point) {
             return (false, None);
         }
@@ -530,9 +519,11 @@ impl Board {
     ///
     /// # Returns
     /// A new Board instance with the loaded data
-    pub fn load_board_file(&mut self, board_json: String) -> Self {
-        let result: Board = serde_json::from_str(&board_json).expect("yes");
-        return result;
+    pub fn load_board_file(&self, board_json: String) -> Result<Self, &'static str> {
+        match serde_json::from_str(&board_json) {
+            Ok(result) => return Ok(result),
+            Err(_) => return Err("Invalid JSON"),
+        }
     }
 
     /// Ensure the cached grid is populated (no clone).
@@ -540,11 +531,11 @@ impl Board {
         if self.cached_grid.borrow().is_some() {
             return;
         }
-        let size: usize = (self.tile_amount_x * self.tile_amount_y) as usize;
-        let mut grid = Vec::with_capacity(size);
+        let tile_amount: usize = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let mut grid = Vec::with_capacity(tile_amount);
         let tile_width = self.tile_width();
         let tile_height = self.tile_height();
-        for tile in 0..size {
+        for tile in 0..tile_amount {
             let num: u8 = 1;
             grid.push(Tile::new(
                 util::get_coordinate_from_idx(tile, self.tile_amount_x, self.tile_amount_y),
@@ -576,14 +567,14 @@ impl Board {
     }
 
     fn get_random_agents(&mut self) {
-        let size = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let tile_amount = (self.tile_amount_x * self.tile_amount_y) as usize;
         let amount = self.starts.len().max(1) * 2;
         println!("{}", amount);
         self.starts.clear();
         self.goals.clear();
         println!("{}", amount);
         let mut rng = rand::rng();
-        let locations = sample(&mut rng, size, amount).into_vec();
+        let locations = sample(&mut rng, tile_amount, amount).into_vec();
         let (starts, goals) = locations.split_at(locations.len() / 2);
         for (i, start) in starts.iter().enumerate() {
             self.starts.push(*start);
@@ -610,17 +601,17 @@ impl Board {
         }
         println!("{:#?}", self.starts);
         println!("{:#?}", self.goals);
-        let size = (self.tile_amount_x * self.tile_amount_y) as usize;
-        let mut grid: Vec<Tile> = Vec::with_capacity(size);
+        let tile_amount = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let mut grid: Vec<Tile> = Vec::with_capacity(tile_amount);
         let tile_width = self.tile_width();
         let tile_height = self.tile_height();
         let mut rng = rand::rng();
-        let weighted_number = (size as f32 * (weighted_percentage as f32 / 100.0)) as usize;
+        let weighted_number = (tile_amount as f32 * (weighted_percentage as f32 / 100.0)) as usize;
         let obstacle_number = if obstacle_percentage == 0 {
             0
         } else {
-            (size as u32 / (2 * self.starts.len().max(1) as u32))
-                .min((size as f32 * (obstacle_percentage as f32 / 100.0)) as u32)
+            (tile_amount as u32 / (2 * self.starts.len().max(1) as u32))
+                .min((tile_amount as f32 * (obstacle_percentage as f32 / 100.0)) as u32)
                 as usize
         };
 
@@ -719,15 +710,16 @@ impl Board {
         building_max_size: u32,
         random_agents: bool,
     ) {
+        self.cached_background = None;
         if random_agents {
             self.get_random_agents();
         }
-        let size = (self.tile_amount_x * self.tile_amount_y) as usize;
-        let mut grid: Vec<Tile> = Vec::with_capacity(size);
+        let tile_amount = (self.tile_amount_x * self.tile_amount_y) as usize;
+        let mut grid: Vec<Tile> = Vec::with_capacity(tile_amount);
         let tile_width = self.tile_width();
         let tile_height = self.tile_height();
         let mut rng = rand::rng();
-        let mut grid_allocation: Vec<u8> = vec![0; size];
+        let mut grid_allocation: Vec<u8> = vec![0; tile_amount];
         // road = 1
         // floor = 0
         // obstacle = 2
@@ -760,7 +752,7 @@ impl Board {
         let average_building_size = (building_min_size + building_max_size) as f32;
 
         let num_buildings =
-            ((size as f32 / average_building_size) * (building_density / 100.0)) as u32;
+            ((tile_amount as f32 / average_building_size) * (building_density / 100.0)) as u32;
 
         for _ in 0..num_buildings {
             let start_x = rng.random_range(0..self.tile_amount_x as i32);
@@ -853,28 +845,42 @@ impl Board {
     /// Create pathfinding agents from start/goal positions.
     ///
     /// Each start position is paired with the corresponding goal position.
-    fn create_agents(&mut self) {
-        if self.starts.len() != self.goals.len() {
-            println!("Not all agents have a corresponding goal");
-            return;
+    fn create_agents(&mut self) -> Result<&'static str, &'static str> {
+        if self.goals.is_empty() || self.starts.is_empty() {
+            return Err("No goals or Agents on Board");
         }
-        for i in 0..self.starts.len() {
+        let goal_amount: usize = self.goals.len();
+        let start_amount: usize = self.starts.len();
+        let indexes = start_amount.max(goal_amount);
+
+        for i in 0..indexes {
+            let mut start_index = i;
+            let mut goal_index = i;
+            if goal_amount != start_amount {
+                if i > goal_amount - 1 {
+                    goal_index = i % goal_amount;
+                } else if i > start_amount - 1 {
+                    start_index = i % start_amount;
+                }
+            }
+
             let start = util::get_coordinate_from_idx(
-                self.starts[i],
+                self.starts[start_index],
                 self.tile_amount_x,
                 self.tile_amount_y,
             );
             self.agents.push(Agent {
                 start: start,
                 goal: util::get_coordinate_from_idx(
-                    self.goals[i],
+                    self.goals[goal_index],
                     self.tile_amount_x,
                     self.tile_amount_y,
                 ),
                 position: start,
                 path: vec![],
-            })
+            });
         }
+        return Ok("Agents Successfully created");
     }
 
     /// Initialize a data map for collecting benchmark metrics per agent.
@@ -926,11 +932,15 @@ impl Board {
         iterations: usize,
         weight_range: u8,
         gen_mode: settings::GenerationMode,
-        display_last_run: bool,
-    ) {
+    ) -> Result<String, &'static str> {
         if !random_agents {
             if self.agents.is_empty() {
-                self.create_agents();
+                match self.create_agents() {
+                    Err(e) => {
+                        return Err(e);
+                    }
+                    _ => {}
+                }
             }
         }
         let mut data_map: HashMap<usize, PathData> = self.create_data_map(iterations);
@@ -1019,16 +1029,13 @@ impl Board {
                                 // If any path is not possible, regenerate
                                 if steps.is_none() {
                                     valid_iteration = false;
-                                    if !doubling || !dyn_gen {
-                                        println!("No possible Path");
-                                        return;
+                                    if !doubling && !dyn_gen {
+                                        return Err("No possible Path");
                                     }
                                 } else {
-                                    if !doubling || !dyn_gen {
-                                        println!("Path is possible but algorithm couldn't find a solution in a reasonable amount of time");
-                                        return;
+                                    if !doubling && !dyn_gen {
+                                        return Err("Path is possible but algorithm couldn't find a solution in a reasonable amount of time");
                                     }
-                                    println!("Path is possible but algorithm couldn't find a solution in a reasonable amount of time");
                                     break;
                                 }
                             } else {
@@ -1056,101 +1063,108 @@ impl Board {
                     self.draw(canvas);
                 }
             }
-            if i == iterations - 1 && display_last_run {
-                // Mark all tiles as dirty so they redraw on last iteration
-                let mut display_shown = false;
-                while !display_shown {
-                    let mut grid = self.cached_grid.borrow_mut().take().unwrap();
-                    // Mark all tiles as dirty so they redraw every frame
-                    display_shown = true;
-                    self.agents.iter_mut().for_each(|agent| {
-                        let current = agent.position;
-                        if !agent.goal_reached() {
-                            display_shown = false;
-                        }
-                        if agent.path.len() > 0 {
-                            let next = agent.path.pop().unwrap();
-                            if let Some(idx) = util::get_idx_from_coordinate(
-                                current,
-                                self.tile_amount_x,
-                                self.tile_amount_y,
-                            ) {
-                                if let Some(tile) = grid.get_mut(idx) {
-                                    if tile.tile_type != TileType::Enemy {
-                                        tile.change_tile_type(TileType::Floor);
-                                    }
-                                }
-                            }
-                            if let Some(idx) = util::get_idx_from_coordinate(
-                                next,
-                                self.tile_amount_x,
-                                self.tile_amount_y,
-                            ) {
-                                if let Some(new_tile) = grid.get_mut(idx) {
-                                    if new_tile.tile_type != TileType::Enemy {
-                                        new_tile.change_tile_type(TileType::Player);
-                                    }
-                                }
-                            }
-                            agent.position = next;
-                        }
-                    });
-                    self.cached_grid.replace(Some(grid));
-                    #[cfg(not(target_os = "windows"))]
-                    {
-                        canvas.set_draw_color(Color::RGB(87, 87, 81));
-                        canvas.clear();
-                    }
-                    self.draw(canvas);
-                    canvas.present();
-                    thread::sleep(Duration::from_millis(16));
-                }
-
-                let mut grid = self.cached_grid.borrow_mut().take().unwrap();
-                self.agents.iter_mut().for_each(|agent| {
-                    let current = agent.position;
-                    let start = agent.start;
-                    if let Some(idx) = util::get_idx_from_coordinate(
-                        current,
-                        self.tile_amount_x,
-                        self.tile_amount_y,
-                    ) {
-                        if let Some(tile) = grid.get_mut(idx) {
-                            if tile.tile_type != TileType::Enemy {
-                                tile.change_tile_type(TileType::Floor);
-                            }
-                        }
-                    }
-                    if let Some(idx) =
-                        util::get_idx_from_coordinate(start, self.tile_amount_x, self.tile_amount_y)
-                    {
-                        if let Some(new_tile) = grid.get_mut(idx) {
-                            if new_tile.tile_type != TileType::Enemy {
-                                new_tile.change_tile_type(TileType::Player);
-                            }
-                        }
-                    }
-                });
-                self.cached_grid.replace(Some(grid));
-                #[cfg(not(target_os = "windows"))]
-                {
-                    canvas.set_draw_color(Color::RGB(87, 87, 81));
-                    canvas.clear();
-                }
-                self.draw(canvas);
-                canvas.present();
-            }
             if doubling {
                 obstacles *= 2;
             }
             self.draw(canvas);
-            self.agents.clear();
-            println!("{}", i);
         }
+        let mut data_display = String::new();
         for (_, data) in &data_map {
-            println!("{}", format!("{}", data));
+            data_display += format!("{}", data).as_str();
         }
         fileDialog::save_data(&data_map);
+        return Ok(data_display);
+    }
+
+    pub fn display_path_result(&mut self) -> bool {
+        let mut grid = self.cached_grid.borrow_mut();
+        let grid = grid.as_mut().unwrap();
+        let w = self.tile_amount_x as u32;
+
+        let mut all_finished = true;
+
+        for agent in &mut self.agents {
+            let path_len = agent.path.len();
+            if path_len == 0 {
+                continue;
+            }
+            if !agent.goal_reached() {
+                all_finished = false;
+            }
+
+            if let Some(pos) = agent.path.pop() {
+                if let Some(pos_idx) = util::get_idx_from_coordinate(pos, w, w) {
+                    if let Some(old_idx) = util::get_idx_from_coordinate(agent.position, w, w) {
+                        if let Some(tile) = grid.get_mut(old_idx) {
+                            if tile.tile_type != TileType::Enemy {
+                                tile.change_tile_type(TileType::Path);
+                            }
+                        }
+                    }
+
+                    if let Some(tile) = grid.get_mut(pos_idx) {
+                        if tile.tile_type != TileType::Enemy {
+                            tile.change_tile_type(TileType::Player);
+                        }
+                    }
+                }
+                agent.position = pos;
+            } else {
+                if let Some(end_idx) = util::get_idx_from_coordinate(agent.position, w, w) {
+                    if let Some(tile) = grid.get_mut(end_idx) {
+                        if tile.tile_type != TileType::Enemy {
+                            tile.change_tile_type(TileType::Floor);
+                        }
+                    }
+                }
+
+                if let Some(goal_idx) = util::get_idx_from_coordinate(agent.goal, w, w) {
+                    if let Some(tile) = grid.get_mut(goal_idx) {
+                        tile.change_tile_type(TileType::Enemy);
+                    }
+                }
+            }
+        }
+
+        if all_finished {
+            return true;
+        }
+
+        false
+    }
+
+    pub fn clear_path(&mut self) {
+        let mut grid = self.cached_grid.borrow_mut();
+        let grid = grid.as_mut().unwrap();
+        grid.iter_mut()
+            .filter(|tile| tile.tile_type == TileType::Path)
+            .for_each(|tile| tile.change_tile_type(TileType::Floor));
+    }
+
+    pub fn reset_board(&mut self) {
+        let mut grid = self.cached_grid.borrow_mut();
+        let grid = grid.as_mut().unwrap();
+        let w = self.tile_amount_x as usize;
+
+        self.agents.iter_mut().for_each(|agent| {
+            let current = agent.position;
+            let start = agent.start;
+
+            let current_idx = current.1 as usize * w + current.0 as usize;
+            if let Some(tile) = grid.get_mut(current_idx) {
+                if tile.tile_type != TileType::Enemy {
+                    tile.change_tile_type(TileType::Floor);
+                }
+            }
+
+            let start_idx = start.1 as usize * w + start.0 as usize;
+            if let Some(new_tile) = grid.get_mut(start_idx) {
+                if new_tile.tile_type != TileType::Enemy {
+                    new_tile.change_tile_type(TileType::Player);
+                }
+            }
+        });
+        self.agents.clear();
     }
 
     /// Get the bounding rectangle of the board.
@@ -1189,6 +1203,139 @@ impl Board {
                 tile.draw(change_layout, self.location, canvas);
             }
         }
+    }
+}
+
+pub use scanner::*;
+
+pub mod scanner {
+    use sdl2::rect::Point;
+
+    use crate::{
+        components::board::{Board, TileType},
+        Tile,
+    };
+    pub enum file_type {
+        Map,
+        Image,
+        JSON,
+    }
+
+    use std::{
+        cell::RefCell,
+        collections::HashSet,
+        env,
+        ffi::{OsStr, OsString},
+        fs::{read_dir, read_to_string, write, DirEntry},
+        path::{Path, PathBuf},
+    };
+
+    use crate::{colors::*, fileDialog, settings, util};
+
+    pub fn board_from(
+        file: &str,
+        board_size: u32,
+        tile_amount: u32,
+    ) -> Result<Board, &'static str> {
+        match Path::new(file).extension().and_then(OsStr::to_str) {
+            Some(ext) => match ext {
+                "map" => return board_from_map(file, board_size, tile_amount),
+                "json" => return board_from_json(file),
+                _ => return Err("Not a supported file type"),
+            },
+            None => return Err("No file given"),
+        }
+    }
+
+    fn board_from_map(
+        file: &str,
+        board_size: u32,
+        tile_amount: u32,
+    ) -> Result<Board, &'static str> {
+        let mut board_size = board_size;
+        let mut tile_amount = tile_amount;
+        match fileDialog::read_file(file) {
+            Ok(result) => {
+                for line in result.split("\n") {
+                    if line.contains("height") || line.contains("width") {
+                        let words: Vec<&str> = line.split_whitespace().collect();
+                        match words[1].parse::<u32>() {
+                            Ok(size) => {
+                                tile_amount = size.min(512);
+                                break;
+                            }
+                            Err(_) => {}
+                        }
+                    }
+                }
+                let mut tiles: Vec<Tile> = Vec::new();
+                let mut tile_dim = board_size / tile_amount;
+                if tile_dim <= 1 {
+                    tile_dim = 2;
+                    board_size = (tile_amount * 2).min(1024);
+                }
+                for (i, char) in result
+                    .chars()
+                    .filter(|c| c == &'.' || c == &'@')
+                    .enumerate()
+                {
+                    if char == '.' {
+                        tiles.push(Tile::new(
+                            util::get_coordinate_from_idx(i, tile_amount, tile_amount),
+                            super::TileType::Floor,
+                            tile_dim,
+                            tile_dim,
+                            0,
+                            true,
+                            WHITE,
+                        ));
+                    } else if char == '@' {
+                        tiles.push(Tile::new(
+                            util::get_coordinate_from_idx(i, tile_amount, tile_amount),
+                            super::TileType::Obstacle,
+                            tile_dim,
+                            tile_dim,
+                            0,
+                            true,
+                            BLACK,
+                        ));
+                    }
+                }
+
+                Ok(Board {
+                    location: Point::new(0, 0),
+                    height: board_size,
+                    width: board_size,
+                    tile_amount_x: tile_amount,
+                    tile_amount_y: tile_amount,
+                    selected_piece_type: TileType::Obstacle,
+                    id: String::from("game_board"),
+                    active: true,
+                    multiple_agents: false,
+                    multiple_goals: false,
+                    cached_background: None,
+                    cached_grid: RefCell::new(Some(tiles)),
+                    agents: vec![],
+                    goals: vec![],
+                    starts: vec![],
+                })
+            }
+            Err(_) => return Err("Invalid JSON"),
+        }
+    }
+
+    fn board_from_json(file: &str) -> Result<Board, &'static str> {
+        match fileDialog::read_file(file) {
+            Ok(result) => match serde_json::from_str(&result) {
+                Ok(result) => return Ok(result),
+                Err(_) => return Err("Invalid JSON"),
+            },
+            Err(_) => return Err("Couldn't read file"),
+        }
+    }
+
+    fn board_from_image(file: &str) -> Result<Vec<Tile>, &'static str> {
+        todo!();
     }
 }
 
@@ -1321,6 +1468,7 @@ mod tests {
         assert_eq!(TileType::Obstacle, TileType::Obstacle);
         assert_eq!(TileType::Player, TileType::Player);
         assert_eq!(TileType::Enemy, TileType::Enemy);
+        assert_eq!(TileType::Path, TileType::Path);
         assert_ne!(TileType::Floor, TileType::Obstacle);
         assert_ne!(TileType::Player, TileType::Enemy);
     }
@@ -1338,6 +1486,7 @@ mod tests {
             TileType::Obstacle,
             TileType::Player,
             TileType::Enemy,
+            TileType::Path,
             TileType::Weighted(100),
         ];
         for tt in types {
@@ -1517,7 +1666,7 @@ mod tests {
         let mut board = make_test_board(5, 5);
         let _ = board.grid();
         let json = serde_json::to_string(&board).unwrap();
-        let loaded = board.load_board_file(json);
+        let loaded = board.load_board_file(json).unwrap();
         assert_eq!(loaded.tile_amount_x, 5);
         assert_eq!(loaded.tile_amount_y, 5);
     }
@@ -1590,5 +1739,85 @@ mod tests {
         board.change_width(100);
         board.change_height(100);
         assert_eq!(board.tile_height(), 20);
+    }
+
+    // ------- Board display_path_result step-by-step -------
+
+    #[test]
+    fn test_display_path_result_completes_animation() {
+        use crate::pathfinding::Agent;
+        let mut board = make_test_board(5, 5);
+        let _ = board.grid();
+        board.agents.push(Agent {
+            start: (0, 0),
+            goal: (2, 2),
+            position: (0, 0),
+            path: vec![(0, 0), (1, 0), (2, 0), (2, 1), (2, 2)],
+        });
+
+        let mut calls = 0;
+        while !board.display_path_result() {
+            calls += 1;
+            if calls > 100 {
+                panic!("display_path_result did not complete");
+            }
+        }
+
+        assert!(true);
+    }
+
+    #[test]
+    fn test_display_path_result_no_path_tiles_left() {
+        use crate::pathfinding::Agent;
+        let mut board = make_test_board(5, 5);
+        let _ = board.grid();
+        board.agents.push(Agent {
+            start: (0, 0),
+            goal: (2, 0),
+            position: (0, 0),
+            path: vec![(0, 0), (1, 0), (2, 0)],
+        });
+
+        while !board.display_path_result() {}
+        board.clear_path();
+
+        let grid = board.cached_grid.borrow();
+        let path_count = grid
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter(|t| t.tile_type == TileType::Path)
+            .count();
+        assert_eq!(path_count, 0);
+    }
+
+    #[test]
+    fn test_display_path_result_multiple_agents() {
+        use crate::pathfinding::Agent;
+        let mut board = make_test_board(5, 5);
+        let _ = board.grid();
+        board.agents.push(Agent {
+            start: (0, 0),
+            goal: (1, 0),
+            position: (0, 0),
+            path: vec![(1, 0), (0, 0)],
+        });
+        board.agents.push(Agent {
+            start: (2, 2),
+            goal: (4, 4),
+            position: (2, 2),
+            path: vec![(4, 4), (3, 3), (2, 2)],
+        });
+
+        let mut calls = 0;
+        while !board.display_path_result() {
+            calls += 1;
+            if calls > 100 {
+                panic!("display_path_result did not complete");
+            }
+        }
+
+        assert_eq!(board.agents[0].position, board.agents[0].goal);
+        assert_eq!(board.agents[1].position, board.agents[1].goal);
     }
 }

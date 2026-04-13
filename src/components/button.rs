@@ -285,27 +285,19 @@ impl Interface for StandardButton {
         if hovering {
             canvas.set_draw_color(WHITE);
             canvas.fill_rect(button_background).unwrap();
-            font_surface = if self.cached_texture.is_none() {
-                font.render(&self.text)
-                    .blended(BLACK)
-                    .map_err(|e| e.to_string())
-                    .unwrap()
-            } else {
-                // Use cached texture
-                return;
-            }
+            font_surface = font
+                .render(&self.text)
+                .blended(BLACK)
+                .map_err(|e| e.to_string())
+                .unwrap()
         } else {
             canvas.set_draw_color(self.background_color);
             canvas.fill_rect(button_background).unwrap();
-            font_surface = if self.cached_texture.is_none() {
-                font.render(&self.text)
-                    .blended(self.text_color)
-                    .map_err(|e| e.to_string())
-                    .unwrap()
-            } else {
-                // Use cached texture
-                return;
-            }
+            font_surface = font
+                .render(&self.text)
+                .blended(self.text_color)
+                .map_err(|e| e.to_string())
+                .unwrap()
         }
 
         let font_texture: Texture<'_> = texture_creator

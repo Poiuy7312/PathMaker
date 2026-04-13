@@ -11,6 +11,8 @@ pub const RED: Color = Color::RGB(255, 0, 0);
 /// Pure green color - used for player/start tiles
 pub const GREEN: Color = Color::RGB(0, 255, 0);
 
+pub const BLUE: Color = Color::RGB(0, 0, 255);
+
 /// Pure black color - used for obstacles and outlines
 pub const BLACK: Color = Color::RGB(0, 0, 0);
 
