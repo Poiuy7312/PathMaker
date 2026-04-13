@@ -833,8 +833,6 @@ pub fn main() {
     let (mut window_width, mut window_height) =
         canvas.output_size().expect("Unable to obtain window size");
     'running: loop {
-        let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
-        let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
         #[cfg(not(target_os = "windows"))]
         {
             canvas.set_draw_color(Color::RGB(87, 87, 81));

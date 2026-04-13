@@ -41,23 +41,65 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # --- Linux dependencies ---
-      - name: Install Linux dependencies
+      # Set VCPKG_ROOT as early as possible so it is available for every
+      # subsequent step including the rust-cache and cargo build steps.
+      # Windows: cargo-vcpkg uses the pre-installed vcpkg at C:\vcpkg
+      # Linux/macOS: cargo-vcpkg builds into target/vcpkg
+      - name: Set VCPKG_ROOT (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+
+      - name: Set VCPKG_ROOT (Unix)
+        if: runner.os != 'Windows'
+        run: echo "VCPKG_ROOT=${{ github.workspace }}/target/vcpkg" >> $GITHUB_ENV
+
+      - name: Install Linux build tools
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libsdl2-dev libsdl2-ttf-dev \
-            pkg-config
+          sudo apt-get install -y cmake build-essential pkg-config curl zip unzip tar \
+            autoconf autoconf-archive automake libtool libltdl-dev \
+            libx11-dev libxext-dev libxi-dev libxrandr-dev libxss-dev \
+            libasound2-dev libpulse-dev \
+            libdbus-1-dev libsystemd-dev libwayland-dev wayland-protocols \
+            libxkbcommon-dev libegl1-mesa-dev libgles2-mesa-dev
 
-      # --- macOS dependencies ---
-      - name: Install macOS dependencies
+      # VCPKG_FORCE_SYSTEM_BINARIES tells vcpkg to use Homebrew's cmake/ninja
+      # rather than downloading its own, avoiding ARM64 architecture mismatches.
+      # Also remove the system vcpkg so sdl2-sys doesn't find it before target/vcpkg.
+      - name: Install macOS build tools
         if: runner.os == 'macOS'
         run: |
-          brew install sdl2 sdl2_ttf pkg-config
+          brew install cmake ninja pkg-config
+          echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
+          sudo rm -rf /usr/local/share/vcpkg /usr/local/bin/vcpkg
 
+      - name: Install Windows build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
+
+      # --- Rust toolchain ---
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # Rust cache goes before cargo-vcpkg so cached build scripts are compiled
+      # with VCPKG_ROOT already set in the environment.
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cargo-vcpkg
+        if: runner.os != 'Windows'
+        run: cargo install cargo-vcpkg
+
+      
       # --- Windows dependencies (vcpkg) ---
-      - name: Set up vcpkg cache (Windows)
+      - name: Cache vcpkg (Windows)
         if: runner.os == 'Windows'
         uses: actions/cache@v4
         with:
@@ -65,6 +107,18 @@ jobs:
           key: vcpkg-${{ matrix.target }}-sdl2
           restore-keys: vcpkg-${{ matrix.target }}-
 
+
+      - name: Cache vcpkg (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/vcpkg
+          key: vcpkg-${{ matrix.target }}-${{ hashFiles('Cargo.toml') }}
+          restore-keys: vcpkg-${{ matrix.target }}-
+        
       - name: Install Windows dependencies (vcpkg)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -81,21 +135,13 @@ jobs:
           choco install pkgconfiglite -y
           echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
 
-      # --- Rust toolchain ---
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-
-      # --- Build ---
-      - name: Build (Linux / macOS)
+      - name: Build vcpkg dependencies (Unix)
         if: runner.os != 'Windows'
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo vcpkg -v build --target ${{ matrix.target }}
+
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
+        run: cargo build --release --target ${{ matrix.target }} --features ci-static
 
       - name: Build (Windows)
         if: runner.os == 'Windows'
@@ -106,28 +152,11 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       # --- Package binary ---
-      - name: Package binary (Linux)
-        if: runner.os == 'Linux'
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
         run: |
           mkdir -p staging
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
-          cp -r src/assets staging/ 2>/dev/null || true
-          cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
-
-      - name: Package binary (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p staging
-          cp target/${{ matrix.target }}/release/${{ matrix.binary }} staging/
-          install_name_tool -add_rpath "@loader_path" staging/${{ matrix.binary }}
-          cat > staging/pathmaker << 'SCRIPT'
-          #!/bin/bash
-          DIR="$(cd "$(dirname "$0")" && pwd)"
-          export DYLD_LIBRARY_PATH="$DIR:$DYLD_LIBRARY_PATH"
-          exec "$DIR/pathmaker_bin" "$@"
-          SCRIPT
-          chmod +x staging/pathmaker
-          mv staging/${{ matrix.binary }} staging/pathmaker_bin
           cp -r src/assets staging/ 2>/dev/null || true
           cd staging && tar czf ../${{ matrix.artifact }}.tar.gz *
 
@@ -140,7 +169,7 @@ jobs:
           if (Test-Path "src/assets") { Copy-Item -Recurse "src/assets" staging/ }
           Compress-Archive -Path staging/* -DestinationPath "${{ matrix.artifact }}.zip"
 
-      # --- Upload artifact (always available for download) ---
+      # --- Upload artifact ---
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -174,3 +203,32 @@ jobs:
           files: |
             artifacts/**/*.tar.gz
             artifacts/**/*.zip
+
+
+
+
+      - name: Install Windows dependencies (vcpkg)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          vcpkg install sdl2:x64-windows-static-md sdl2-ttf:x64-windows-static-md sdl2-image:x64-windows-static-md
+          vcpkg integrate install
+          echo "VCPKG_ROOT=C:\vcpkg" >> $env:GITHUB_ENV
+          echo "VCPKGRS_DYNAMIC=1" >> $env:GITHUB_ENV
+      - name: Install pkg-config (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install pkgconfiglite -y
+          echo "PKG_CONFIG_PATH=C:\vcpkg\installed\x64-windows-static-md\lib\pkgconfig" >> $env:GITHUB_ENV
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          SDL2_LIB_DIR: C:\vcpkg\installed\x64-windows-static-md\lib
+          SDL2_INCLUDE_DIR: C:\vcpkg\installed\x64-windows-static-md\include
+        run: cargo build --release --target ${{ matrix.target }}
+
+ 
+
