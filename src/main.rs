@@ -835,13 +835,13 @@ pub fn main() {
     'running: loop {
         let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
         let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
-        /*#[cfg(not(target_os = "windows"))]
+        #[cfg(not(target_os = "windows"))]
         {
             canvas.set_draw_color(Color::RGB(87, 87, 81));
             canvas.clear();
             game_board.draw(&mut canvas);
             board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
-        }*/
+        }
         /*-------- User UI -------- */
         let current_size = canvas.output_size().expect("Unable to obtain window size");
         if game_board.height > current_size.1 || game_board.width > board_width {
@@ -851,6 +851,7 @@ pub fn main() {
         if (window_width, window_height) != current_size {
             (window_width, window_height) = current_size;
             canvas.set_draw_color(Color::RGB(87, 87, 81));
+            #[cfg(target_os = "windows")]
             canvas.clear();
 
             game_board.change_location(Point::new(0, 0));
@@ -872,7 +873,7 @@ pub fn main() {
                 save_widget.get_location().y(),
             ));
             save_widget.change_drawn(false);
-            //#[cfg(target_os = "windows")]
+            #[cfg(target_os = "windows")]
             board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
         }
 
@@ -932,7 +933,7 @@ pub fn main() {
             save_widget.change_active(false);
             /*------ Board Editing Components ------*/
 
-            //#[cfg(target_os = "windows")]
+            #[cfg(target_os = "windows")]
             board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
 
             board_control_widget.change_active(true);
@@ -1083,6 +1084,7 @@ pub fn main() {
                                 save_widget.change_result(Some(home_dir.clone()));
                                 game_board.change_active(true);
                                 canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                #[cfg(target_os = "windows")]
                                 canvas.clear();
                                 game_board.draw(&mut canvas);
                             }
@@ -1100,6 +1102,7 @@ pub fn main() {
                                 save_widget.change_active(false);
                                 save_widget.change_result(Some(home_dir.clone()));
                                 canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                #[cfg(target_os = "windows")]
                                 canvas.clear();
                                 game_board.change_active(true);
                                 game_board.draw(&mut canvas);
@@ -1163,6 +1166,7 @@ pub fn main() {
                                                 }
                                                 select_file = false;
                                                 canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                                #[cfg(target_os = "windows")]
                                                 canvas.clear();
                                                 game_board.active = true;
                                                 game_board.draw(&mut canvas);
@@ -1175,6 +1179,7 @@ pub fn main() {
                                 file_select_widget.change_active(false);
                                 select_file = false;
                                 canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                #[cfg(target_os = "windows")]
                                 canvas.clear();
                                 file_select_widget.change_result(Some(home_dir.clone()));
                                 game_board.change_active(true);
@@ -1192,6 +1197,7 @@ pub fn main() {
                     Some(name) => match name.as_str() {
                         "START" => {
                             run_game_board = true;
+                            game_board.clear_path();
 
                             if let Some(d_window) =
                                 board_control_widget.buttons.get_mut("Debug_Window")

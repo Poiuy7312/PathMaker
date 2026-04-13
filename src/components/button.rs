@@ -256,11 +256,11 @@ impl Interface for StandardButton {
     ) {
         let hovering = self.mouse_over_component(mouse_position);
         if self.is_hovering() != hovering {
-            //#[cfg(target_os = "windows")]
+            #[cfg(target_os = "windows")]
             self.change_drawn(false);
             self.change_hover(hovering);
         }
-        //#[cfg(target_os = "windows")]
+        #[cfg(target_os = "windows")]
         if self.is_drawn() {
             return;
         }
@@ -1119,7 +1119,7 @@ impl Interface for CheckBox {
         mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        //#[cfg(target_os = "windows")]
+        #[cfg(target_os = "windows")]
         if self.is_drawn() && !self.mouse_over_component(mouse_position) {
             return; // Skip if already drawn and not hovering
         }
