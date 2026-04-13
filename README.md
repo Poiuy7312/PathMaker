@@ -2,34 +2,9 @@
 [![Rust](https://github.com/Poiuy7312/PathMaker/actions/workflows/test.yml/badge.svg)](https://github.com/Poiuy7312/PathMaker/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/Poiuy7312/PathMaker/graph/badge.svg?token=06KDNK8IK8)](https://codecov.io/gh/Poiuy7312/PathMaker)
 
-## Required Dependencies
+### Installation
 
-This Project in order to run currently requires the installation of [Rust](https://rust-lang.org/tools/install/)
-
-Rust currently comes with cargo the languages package manager
-
-It also requires the installation of **SDL2** and the dev files.
-
-Linux:
-
-```bash
-sudo apt update
-sudo apt install libsdl2-dev
-```
-
-Windows:
-
- > **_Note_:** I would highly suggest using wsl for running this project currently then you can just use the above linux command
-
-[Official Installation Instructions](https://wiki.libsdl.org/SDL2/Installation)
-
-
-MacOS
-
-```
-brew install sdl2
-```
-
+Simply install the binary from the most recent release and run on your computer, it may be flagged by your computers security and you'll have to manually allow your computer to trust the program.
 ### How to run
 
 Once all the dependencies are installed just cd into the directory with the cargo.lock and cargo.toml files and run the command `cargo run`
