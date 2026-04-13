@@ -1095,7 +1095,7 @@ impl Board {
                     if let Some(old_idx) = util::get_idx_from_coordinate(agent.position, w, w) {
                         if let Some(tile) = grid.get_mut(old_idx) {
                             if tile.tile_type != TileType::Enemy {
-                                tile.change_tile_type(TileType::Floor);
+                                tile.change_tile_type(TileType::Path);
                             }
                         }
                     }
@@ -1129,6 +1129,14 @@ impl Board {
         }
 
         false
+    }
+
+    pub fn clear_path(&mut self) {
+        let mut grid = self.cached_grid.borrow_mut();
+        let grid = grid.as_mut().unwrap();
+        grid.iter_mut()
+            .filter(|tile| tile.tile_type == TileType::Path)
+            .for_each(|tile| tile.change_tile_type(TileType::Floor));
     }
 
     pub fn reset_board(&mut self) {
@@ -1271,7 +1279,7 @@ pub mod scanner {
                             super::TileType::Floor,
                             tile_dim,
                             tile_dim,
-                            255,
+                            0,
                             true,
                             WHITE,
                         ));
@@ -1281,7 +1289,7 @@ pub mod scanner {
                             super::TileType::Obstacle,
                             tile_dim,
                             tile_dim,
-                            255,
+                            0,
                             true,
                             BLACK,
                         ));
