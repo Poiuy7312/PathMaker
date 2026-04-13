@@ -1,6 +1,7 @@
 # PathMaker
 [![Rust](https://github.com/Poiuy7312/PathMaker/actions/workflows/test.yml/badge.svg)](https://github.com/Poiuy7312/PathMaker/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/Poiuy7312/PathMaker/graph/badge.svg?token=06KDNK8IK8)](https://codecov.io/gh/Poiuy7312/PathMaker)
+![GitHub tag (latest by date)](https://img.shields.io/github/v/tag/Poiuy7312/PathMaker)
 
 ### Installation
 
