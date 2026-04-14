@@ -127,7 +127,7 @@ impl Tile {
             dirty,
             cached_rectangle: None,
             cached_color: color,
-            weight,
+            weight: weight.max(1),
         }
     }
 
@@ -152,7 +152,6 @@ impl Tile {
         if change_layout {
             self.cached_rectangle = None;
         } else if !self.dirty {
-
             #[cfg(target_os = "windows")]
             return;
         }
@@ -1285,7 +1284,7 @@ pub mod scanner {
                             super::TileType::Floor,
                             tile_dim,
                             tile_dim,
-                            0,
+                            1,
                             true,
                             WHITE,
                         ));
@@ -1295,7 +1294,7 @@ pub mod scanner {
                             super::TileType::Obstacle,
                             tile_dim,
                             tile_dim,
-                            0,
+                            1,
                             true,
                             BLACK,
                         ));

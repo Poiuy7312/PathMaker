@@ -129,15 +129,12 @@ pub fn main() {
     let mut settings =
         GameSettings::load(&settings_path).unwrap_or_else(|_| GameSettings::default());
 
-    // Use settings values
+    // Use settings values for board dimensions
     let board_width: u32 = settings.board_width;
     let board_height: u32 = settings.board_height;
     let window_width: u32 = settings.window_width;
     let window_height: u32 = settings.window_height;
-    let debug_height = window_height / 4;
-    let control_width = window_width - board_width;
-    let control_height = window_height;
-    let tiles_x: u32 = settings.tiles_x; // Replace with settings.tiles_x
+    let tiles_x: u32 = settings.tiles_x;
     let tiles_y: u32 = settings.tiles_y;
     let sdl_context = sdl2::init().unwrap();
 
@@ -166,6 +163,14 @@ pub fn main() {
         .build()
         .unwrap();
 
+    let (canvas_width, canvas_height) = canvas
+        .output_size()
+        .unwrap_or((window_width, window_height));
+    let control_width = canvas_width.saturating_sub(board_width);
+    let control_height = canvas_height;
+    let debug_height = canvas_height / 4;
+    let controls_width = canvas_width / 5;
+
     let texture_creator = canvas.texture_creator();
     let directory_tree = fileDialog::get_file_tree();
     let mut select_file: bool = false; // Check if select file widget is active
@@ -184,8 +189,6 @@ pub fn main() {
 
     let mut mouse_clicked_on: bool = false;
     let mut replacement_labels: Vec<&str> = Vec::with_capacity(3);
-
-    let controls_width = window_width * 1 / 5;
 
     let mut run_game_board = false;
     //= Rect::new(998, 0, 1000, 1000);
@@ -851,7 +854,6 @@ pub fn main() {
         if (window_width, window_height) != current_size {
             (window_width, window_height) = current_size;
             canvas.set_draw_color(Color::RGB(87, 87, 81));
-            #[cfg(target_os = "windows")]
             canvas.clear();
 
             game_board.change_location(Point::new(0, 0));
