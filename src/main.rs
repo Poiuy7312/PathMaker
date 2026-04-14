@@ -144,7 +144,9 @@ pub fn main() {
     //let window_height = display_mode.h as u32;
     video_subsystem.text_input().stop();
     let mut window = video_subsystem
-        .window("PathMaker demo", window_width, window_height)
+        .window("PathMaker", window_width, window_height)
+        .resizable()
+        .allow_highdpi()
         .position_centered()
         .build()
         .expect("Failed to render Window");
@@ -591,7 +593,7 @@ pub fn main() {
         cached_texture: None,
     });
 
-    let mut debug_window = Box::new(DisplayBox::new(
+    let debug_window = Box::new(DisplayBox::new(
         (window_width - control_width) as i32,
         (window_height - debug_height) as i32,
         control_width,
