@@ -152,9 +152,6 @@ impl Tile {
     fn draw(&mut self, change_layout: bool, board_origin: Point, canvas: &mut Canvas<Window>) {
         if change_layout {
             self.cached_rectangle = None;
-        } else if !self.dirty {
-            #[cfg(target_os = "windows")]
-            return;
         }
         let tile_rect = match self.cached_rectangle {
             Some(rect) => rect,
@@ -606,6 +603,7 @@ impl Board {
             println!("Yes");
             self.get_random_agents();
         }
+        self.mark_texture_dirty();
         println!("{:#?}", self.starts);
         println!("{:#?}", self.goals);
         let tile_amount = (self.tile_amount_x * self.tile_amount_y) as usize;
@@ -721,6 +719,7 @@ impl Board {
         if random_agents {
             self.get_random_agents();
         }
+        self.mark_texture_dirty();
         let tile_amount = (self.tile_amount_x * self.tile_amount_y) as usize;
         let mut grid: Vec<Tile> = Vec::with_capacity(tile_amount);
         let tile_width = self.tile_width();
@@ -1090,6 +1089,7 @@ impl Board {
         let w = self.tile_amount_x as u32;
 
         let mut all_finished = true;
+        self.mark_texture_dirty();
 
         for agent in &mut self.agents {
             let path_len = agent.path.len();
