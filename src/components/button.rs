@@ -84,12 +84,6 @@ pub trait Interface: Component {
 
     /// Get a mutable reference to the component as Any for downcasting.
     fn as_any(&mut self) -> &mut dyn Any;
-
-    /// Set whether the component has been drawn this frame.
-    fn change_drawn(&self, new_val: bool);
-
-    /// Check if the component has already been drawn this frame.
-    fn is_drawn(&self) -> bool;
 }
 
 /// Trait for components that can be used as dropdown menu options.
@@ -144,10 +138,10 @@ pub struct StandardButton {
     pub filter: Option<String>,
     /// Whether the button is interactive
     pub active: bool,
-    /// Draw state flag
-    pub drawn: RefCell<bool>,
+    /// Hovering Flag
+    pub hovering: RefCell<bool>,
     /// Cached texture for text (optimization)
-    pub cached_texture: Option<Texture<'static>>,
+    pub cached_texture: RefCell<Option<Texture<'static>>>,
 }
 
 impl Component for StandardButton {
@@ -231,20 +225,9 @@ impl Interface for StandardButton {
         self
     }
 
-    fn change_drawn(&self, new_val: bool) {
-        self.drawn.replace(new_val);
-    }
-
-    fn is_drawn(&self) -> bool {
-        let drawn = unsafe { *self.drawn.as_ptr() };
-        if drawn {
-            return true;
-        }
-        return false;
-    }
-
     fn change_label(&mut self, new_text: String) {
-        self.text = new_text
+        self.text = new_text;
+        self.cached_texture.replace(None);
     }
 
     fn draw<'a>(
@@ -254,17 +237,6 @@ impl Interface for StandardButton {
         mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        let hovering = self.mouse_over_component(mouse_position);
-        if self.is_hovering() != hovering {
-            #[cfg(target_os = "windows")]
-            self.change_drawn(false);
-            self.change_hover(hovering);
-        }
-        #[cfg(target_os = "windows")]
-        if self.is_drawn() {
-            return;
-        }
-
         let button_background: Rect = self.get_rect(self.location);
         let available_width = (self.width as i32 - 10) as u32;
         let text_len = self.text.chars().count() as u32;
@@ -280,9 +252,16 @@ impl Interface for StandardButton {
         canvas.fill_rect(button_outline).unwrap();
 
         let font_surface: Surface<'_>;
+        let hover = self.mouse_over_component(mouse_position);
+        let hovering = self
+            .hovering
+            .replace(self.mouse_over_component(mouse_position));
+        if hovering != hover {
+            *self.cached_texture.borrow_mut() = None;
+        }
 
         // render a surface, and convert it to a texture bound to the canvas
-        if hovering {
+        if hover {
             canvas.set_draw_color(WHITE);
             canvas.fill_rect(button_background).unwrap();
             font_surface = font
@@ -299,15 +278,21 @@ impl Interface for StandardButton {
                 .map_err(|e| e.to_string())
                 .unwrap()
         }
-
-        let font_texture: Texture<'_> = texture_creator
-            .create_texture_from_surface(&font_surface)
-            .map_err(|e| e.to_string())
-            .unwrap();
+        if self.cached_texture.borrow().is_none() {
+            let font_texture: Texture<'_> = texture_creator
+                .create_texture_from_surface(&font_surface)
+                .map_err(|e| e.to_string())
+                .unwrap();
+            *self.cached_texture.borrow_mut() =
+                Some(unsafe { std::mem::transmute::<Texture<'_>, Texture<'static>>(font_texture) });
+        }
         canvas
-            .copy(&font_texture, None, text_map)
+            .copy(
+                &self.cached_texture.borrow().as_ref().unwrap(),
+                None,
+                text_map,
+            )
             .expect("Button unable to display text");
-        self.change_drawn(true);
     }
 
     fn after_click(&self) -> bool {
@@ -410,8 +395,6 @@ pub struct Dropdown {
     pub options: RefCell<Vec<StandardButton>>,
     /// Optional filter for searching options
     pub filter: Option<String>,
-    /// Draw state flag
-    pub drawn: RefCell<bool>,
 }
 
 impl Component for Dropdown {
@@ -535,18 +518,6 @@ impl Interface for Dropdown {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn change_drawn(&self, new_val: bool) {
-        self.drawn.replace(new_val);
-    }
-
-    fn is_drawn(&self) -> bool {
-        let drawn = unsafe { *self.drawn.as_ptr() };
-        if drawn {
-            return true;
-        }
-        return false;
     }
 
     fn change_label(&mut self, new_text: String) {
@@ -737,7 +708,6 @@ impl Dropdown {
             let col = self.location.y + (offset as i32 * self.height as i32);
             let loc = Point::new(self.location.x, col);
             let used = b.layout(loc, self.width, self.height);
-            b.change_drawn(false);
             offset += used;
         }
     }
@@ -775,8 +745,6 @@ pub struct OptionButton {
     active_option: Option<String>,
     /// Default styles for each option (for deselected state)
     defaults: HashMap<String, InterfaceStyle>,
-    /// Draw state flag
-    pub drawn: RefCell<bool>,
 }
 
 impl Component for OptionButton {
@@ -786,7 +754,6 @@ impl Component for OptionButton {
     fn on_click(&mut self, mouse_position: Point) -> (bool, Option<String>) {
         let mut cur_option: Option<String> = None;
         self.options.borrow_mut().iter_mut().for_each(|(_, a)| {
-            a.change_drawn(false);
             if a.get_rect(a.location).contains_point(mouse_position) {
                 cur_option = Some(a.get_id());
             }
@@ -903,20 +870,6 @@ impl Interface for OptionButton {
     fn as_any(&mut self) -> &mut dyn Any {
         self
     }
-    fn change_drawn(&self, new_val: bool) {
-        self.drawn.replace(new_val);
-        self.options.borrow_mut().iter_mut().for_each(|(_, a)| {
-            a.drawn.replace(new_val);
-        });
-    }
-
-    fn is_drawn(&self) -> bool {
-        let drawn = unsafe { *self.drawn.as_ptr() };
-        if drawn {
-            return true;
-        }
-        return false;
-    }
 
     fn change_label(&mut self, _: String) {
         return;
@@ -977,8 +930,8 @@ impl OptionButton {
                     id: text.to_string(),
                     filter: None,
                     active,
-                    drawn: RefCell::new(drawn),
-                    cached_texture: None,
+                    cached_texture: RefCell::new(None),
+                    hovering: RefCell::new(false),
                 },
             ));
             count += 1;
@@ -992,7 +945,6 @@ impl OptionButton {
             options: RefCell::new(options),
             active_option: None,
             defaults,
-            drawn: RefCell::new(drawn),
         }
     }
 }
@@ -1016,8 +968,7 @@ pub struct CheckBox {
     pub id: String,
     /// Whether the checkbox is interactive
     pub active: bool,
-    /// Draw state flag
-    pub drawn: RefCell<bool>,
+    pub cached_texture: RefCell<Option<Texture<'static>>>,
 }
 
 impl Component for CheckBox {
@@ -1119,11 +1070,6 @@ impl Interface for CheckBox {
         mouse_position: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        #[cfg(target_os = "windows")]
-        if self.is_drawn() && !self.mouse_over_component(mouse_position) {
-            return; // Skip if already drawn and not hovering
-        }
-
         let button_background: Rect = self.get_rect(self.location);
 
         let available_width = (self.width as i32 - 30) as u32;
@@ -1153,18 +1099,27 @@ impl Interface for CheckBox {
 
         canvas.set_draw_color(WHITE);
         canvas.fill_rect(checkbox_button).unwrap();
+
         font_surface = font
             .render(&self.label)
             .blended(BLACK)
             .map_err(|e| e.to_string())
             .unwrap();
 
-        let font_texture: Texture<'_> = texture_creator
-            .create_texture_from_surface(&font_surface)
-            .map_err(|e| e.to_string())
-            .unwrap();
+        if self.cached_texture.borrow().is_none() {
+            let font_texture: Texture<'_> = texture_creator
+                .create_texture_from_surface(&font_surface)
+                .map_err(|e| e.to_string())
+                .unwrap();
+            *self.cached_texture.borrow_mut() =
+                Some(unsafe { std::mem::transmute::<Texture<'_>, Texture<'static>>(font_texture) });
+        }
         canvas
-            .copy(&font_texture, None, text_map)
+            .copy(
+                &self.cached_texture.borrow().as_ref().unwrap(),
+                None,
+                text_map,
+            )
             .expect("Button unable to display text");
         if self.checked {
             let lines = self.get_check_graphic(&checkbox_button);
@@ -1177,18 +1132,6 @@ impl Interface for CheckBox {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn change_drawn(&self, new_val: bool) {
-        self.drawn.replace(new_val);
-    }
-
-    fn is_drawn(&self) -> bool {
-        let drawn = unsafe { *self.drawn.as_ptr() };
-        if drawn {
-            return true;
-        }
-        return false;
     }
 }
 
@@ -1243,9 +1186,9 @@ pub struct Slider {
     /// Position of the slider thumb along its axis
     pub slider_offset_axis: i32,
     /// Draw state flag
-    pub drawn: RefCell<bool>,
+
     /// Cached texture for text (optimization)
-    pub cached_texture: Option<Texture<'static>>,
+    pub cached_texture: RefCell<Option<Texture<'static>>>,
     /// True for vertical slider, false for horizontal
     pub is_vertical: bool,
     /// True for minimal rendering (thumb only, no label)
@@ -1414,12 +1357,21 @@ impl Interface for Slider {
             .blended(self.text_color)
             .map_err(|e| e.to_string())
             .unwrap();
-        let font_texture: Texture<'_> = texture_creator
-            .create_texture_from_surface(&font_surface)
-            .map_err(|e| e.to_string())
-            .unwrap();
+
+        if self.cached_texture.borrow().is_none() {
+            let font_texture: Texture<'_> = texture_creator
+                .create_texture_from_surface(&font_surface)
+                .map_err(|e| e.to_string())
+                .unwrap();
+            *self.cached_texture.borrow_mut() =
+                Some(unsafe { std::mem::transmute::<Texture<'_>, Texture<'static>>(font_texture) });
+        }
         canvas
-            .copy(&font_texture, None, text_map)
+            .copy(
+                self.cached_texture.borrow().as_ref().unwrap(),
+                None,
+                text_map,
+            )
             .expect("Button unable to display text");
         canvas.set_draw_color(PRIMARY_COLOR);
         canvas.fill_rect(slider).unwrap();
@@ -1429,20 +1381,9 @@ impl Interface for Slider {
         self
     }
 
-    fn change_drawn(&self, new_val: bool) {
-        self.drawn.replace(new_val);
-    }
-
-    fn is_drawn(&self) -> bool {
-        let drawn = unsafe { *self.drawn.as_ptr() };
-        if drawn {
-            return true;
-        }
-        return false;
-    }
-
     fn change_label(&mut self, new_text: String) {
-        self.text = new_text
+        self.text = new_text;
+        self.cached_texture.replace(None);
     }
 
     fn has_indent(&self) -> bool {
@@ -1497,6 +1438,7 @@ impl Slider {
         let new_value = mouse_position.x();
         let slider_width = self.get_slider_width() as i32;
         if new_value != self.slider_offset_axis {
+            self.cached_texture.replace(None);
             self.slider_offset_axis = new_value
                 .max(self.location.x() + slider_width / 2)
                 .min(self.location.x() + self.width as i32 - slider_width / 2);
@@ -1515,6 +1457,7 @@ impl Slider {
         let new_value = mouse_position.y();
         let slider_height = self.get_slider_width() as i32;
         if new_value != self.slider_offset_axis {
+            self.cached_texture.replace(None);
             self.slider_offset_axis = new_value
                 .max(self.location.y() + slider_height / 2)
                 .min(self.location.y() + self.height as i32 - slider_height / 2);
@@ -1549,8 +1492,8 @@ mod tests {
             id: "test_btn".to_string(),
             filter: None,
             active: true,
-            drawn: RefCell::new(false),
-            cached_texture: None,
+            hovering: RefCell::new(false),
+            cached_texture: RefCell::new(None),
         }
     }
 
@@ -1563,7 +1506,7 @@ mod tests {
             width: w,
             id: "test_cb".to_string(),
             active: true,
-            drawn: RefCell::new(false),
+            cached_texture: RefCell::new(None),
         }
     }
 
@@ -1579,8 +1522,7 @@ mod tests {
             active: true,
             range,
             slider_offset_axis: x,
-            drawn: RefCell::new(false),
-            cached_texture: None,
+            cached_texture: RefCell::new(None),
             value: 0,
             is_vertical: false,
             minimal: false,
@@ -1610,11 +1552,10 @@ mod tests {
                 id: "Option B".to_string(),
                 filter: None,
                 active: true,
-                drawn: RefCell::new(false),
-                cached_texture: None,
+                cached_texture: RefCell::new(None),
+                hovering: RefCell::new(false),
             }]),
             filter: None,
-            drawn: RefCell::new(false),
         }
     }
 
@@ -1689,16 +1630,6 @@ mod tests {
         let mut btn = make_standard_button(0, 0, 100, 50);
         btn.change_label("New Label".to_string());
         assert_eq!(btn.text, "New Label");
-    }
-
-    #[test]
-    fn test_standard_button_drawn_state() {
-        let btn = make_standard_button(0, 0, 100, 50);
-        assert!(!btn.is_drawn());
-        btn.change_drawn(true);
-        assert!(btn.is_drawn());
-        btn.change_drawn(false);
-        assert!(!btn.is_drawn());
     }
 
     #[test]
@@ -2204,14 +2135,6 @@ mod tests {
     }
 
     #[test]
-    fn test_checkbox_drawn_state() {
-        let cb = make_checkbox(0, 0, 100, 30);
-        assert!(!cb.is_drawn());
-        cb.change_drawn(true);
-        assert!(cb.is_drawn());
-    }
-
-    #[test]
     fn test_checkbox_get_rect() {
         let cb = make_checkbox(10, 20, 100, 30);
         let rect = cb.get_rect(Point::new(10, 20));
@@ -2260,12 +2183,6 @@ mod tests {
         assert_eq!(btn.get_height(), 50);
     }
 
-    #[test]
-    fn test_standard_button_change_drawn_cascades() {
-        let btn = make_standard_button(0, 0, 100, 50);
-        assert!(!btn.is_drawn());
-    }
-
     // Additional option button tests
 
     #[test]
@@ -2300,14 +2217,6 @@ mod tests {
         assert!(ob.is_active());
         ob.change_active(false);
         assert!(!ob.is_active());
-    }
-
-    #[test]
-    fn test_option_button_drawn_state() {
-        let ob = make_option_button();
-        assert!(!ob.is_drawn());
-        ob.change_drawn(true);
-        assert!(ob.is_drawn());
     }
 
     #[test]

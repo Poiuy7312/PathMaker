@@ -55,7 +55,7 @@ pub struct FileExplorer {
     /// Whether the component is interactive
     pub active: bool,
     /// Draw state flag
-    pub drawn: RefCell<bool>,
+
     /// Vertical scroll slider
     pub scroll_slider: RefCell<Slider>,
     /// Cached list of visible button IDs
@@ -95,25 +95,6 @@ impl Interface for FileExplorer {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn change_drawn(&self, new_val: bool) {
-        if self.drawn == new_val.into() {
-            return;
-        }
-        self.drawn.replace(new_val);
-
-        for (b, _) in self.directories.borrow_mut().values_mut() {
-            b.change_drawn(new_val);
-        }
-    }
-
-    fn is_drawn(&self) -> bool {
-        let drawn = unsafe { *self.drawn.as_ptr() };
-        if drawn {
-            return true;
-        }
-        return false;
     }
 
     fn change_label(&mut self, _: String) {
@@ -211,7 +192,6 @@ impl Interface for FileExplorer {
                 let loc = Point::new(self.location.x, (col - (scroll_offset * height)).max(0));
                 let mut binding = self.directories.borrow_mut();
                 let a = binding.get_mut(button).unwrap();
-                a.0.change_drawn(false);
                 let button_range = a.0.get_rect(loc);
                 let used = a.0.layout(loc, self.width - 20, height as u32);
                 offset += used;
@@ -241,8 +221,6 @@ impl Interface for FileExplorer {
 }
 impl Component for FileExplorer {
     fn on_click(&mut self, mouse_state: Point) -> (bool, Option<String>) {
-        self.change_drawn(false);
-
         // Check if slider is active and if click is on the slider
         if self.scroll_slider.borrow().active {
             let slider_rect = self
@@ -346,7 +324,6 @@ impl FileExplorer {
             for button in self.get_cur_buttons() {
                 if let Some((cur, _)) = self.directories.borrow_mut().get_mut(&button) {
                     cur.change_active(false);
-                    cur.change_drawn(false);
                 }
             }
 
@@ -401,8 +378,8 @@ mod tests {
             id: "/root".to_string(),
             active: false,
             filter: None,
-            drawn: RefCell::new(false),
-            cached_texture: None,
+            cached_texture: RefCell::new(None),
+            hovering: RefCell::new(false),
         };
 
         let child_btn = StandardButton {
@@ -416,8 +393,8 @@ mod tests {
             id: "/root/child".to_string(),
             active: false,
             filter: None,
-            drawn: RefCell::new(false),
-            cached_texture: None,
+            cached_texture: RefCell::new(None),
+            hovering: RefCell::new(false),
         };
 
         map.insert(
@@ -442,7 +419,6 @@ mod tests {
             filter: None,
             filter_dir: false,
             active: true,
-            drawn: RefCell::new(false),
             scroll_slider: RefCell::new(Slider {
                 height: 0,
                 width: 20,
@@ -455,8 +431,7 @@ mod tests {
                 range: 1,
                 value: 0,
                 slider_offset_axis: 0,
-                drawn: RefCell::new(false),
-                cached_texture: None,
+                cached_texture: RefCell::new(None),
                 is_vertical: true,
                 minimal: true,
             }),
@@ -530,16 +505,6 @@ mod tests {
         let mut fe = make_file_explorer();
         fe.active = false;
         assert!(!fe.mouse_over_component(Point::new(300, 200)));
-    }
-
-    #[test]
-    fn test_file_explorer_drawn_state() {
-        let fe = make_file_explorer();
-        assert!(!fe.is_drawn());
-        fe.change_drawn(true);
-        assert!(fe.is_drawn());
-        fe.change_drawn(false);
-        assert!(!fe.is_drawn());
     }
 
     #[test]

@@ -43,8 +43,6 @@ pub struct InputBox {
     pub id: String,
     /// Screen position
     pub location: Point,
-    /// Draw state flag
-    pub drawn: RefCell<bool>,
 }
 
 impl Component for InputBox {
@@ -132,21 +130,6 @@ impl Interface for InputBox {
 
     fn as_any(&mut self) -> &mut dyn Any {
         self
-    }
-
-    fn change_drawn(&self, new_val: bool) {
-        if self.drawn == new_val.into() {
-            return;
-        }
-        self.drawn.replace(new_val);
-    }
-
-    fn is_drawn(&self) -> bool {
-        let drawn = unsafe { *self.drawn.as_ptr() };
-        if drawn {
-            return true;
-        }
-        return false;
     }
 
     fn change_label(&mut self, new_text: String) {
@@ -266,7 +249,6 @@ mod tests {
             width: w,
             id: "test_input".to_string(),
             location: Point::new(x, y),
-            drawn: RefCell::new(false),
         }
     }
 
@@ -348,16 +330,6 @@ mod tests {
         assert!(ib.is_active());
         ib.change_active(false);
         assert!(!ib.is_active());
-    }
-
-    #[test]
-    fn test_inputbox_drawn_state() {
-        let ib = make_inputbox(0, 0, 200, 30);
-        assert!(!ib.is_drawn());
-        ib.change_drawn(true);
-        assert!(ib.is_drawn());
-        ib.change_drawn(false);
-        assert!(!ib.is_drawn());
     }
 
     #[test]

@@ -332,6 +332,8 @@ pub fn run_overall_benchmark(
                         selected_piece_type: TileType::Obstacle,
                         cached_background: None,
                         cached_grid: std::cell::RefCell::new(None),
+                        cached_texture: std::cell::RefCell::new(None),
+                        texture_dirty: std::cell::RefCell::new(true),
                         multiple_agents: false,
                         multiple_goals: false,
                         agents: vec![],

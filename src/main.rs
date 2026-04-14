@@ -222,11 +222,10 @@ pub fn main() {
                 id: "City Generation".to_string(),
                 filter: None,
                 active: false,
-                drawn: RefCell::new(false),
-                cached_texture: None,
+                cached_texture: RefCell::new(None),
+                hovering: RefCell::new(false),
             }]),
             filter: None,
-            drawn: RefCell::new(false),
         })
     };
 
@@ -254,8 +253,8 @@ pub fn main() {
                     id: "Breadth First Search".to_string(),
                     filter: None,
                     active: false,
-                    drawn: RefCell::new(false),
-                    cached_texture: None,
+                    hovering: RefCell::new(false),
+                    cached_texture: RefCell::new(None),
                 },
                 StandardButton {
                     height: 0,
@@ -268,8 +267,8 @@ pub fn main() {
                     id: "A* search".to_string(),
                     filter: None,
                     active: false,
-                    drawn: RefCell::new(false),
-                    cached_texture: None,
+                    hovering: RefCell::new(false),
+                    cached_texture: RefCell::new(None),
                 },
                 StandardButton {
                     height: 0,
@@ -282,12 +281,11 @@ pub fn main() {
                     id: "JPSW".to_string(),
                     filter: None,
                     active: false,
-                    drawn: RefCell::new(false),
-                    cached_texture: None,
+                    hovering: RefCell::new(false),
+                    cached_texture: RefCell::new(None),
                 },
             ]),
             filter: None,
-            drawn: RefCell::new(false),
         })
     };
 
@@ -302,8 +300,8 @@ pub fn main() {
         active: false,
         range: 255,
         slider_offset_axis: 0,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+
+        cached_texture: RefCell::new(None),
         value: 0,
         is_vertical: false,
         minimal: false,
@@ -320,8 +318,8 @@ pub fn main() {
         active: false,
         range: 100,
         slider_offset_axis: 0,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+
+        cached_texture: RefCell::new(None),
         value: 0,
         is_vertical: false,
         minimal: false,
@@ -338,8 +336,8 @@ pub fn main() {
         active: false,
         range: 100,
         slider_offset_axis: 0,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+
+        cached_texture: RefCell::new(None),
         value: 0,
         is_vertical: false,
         minimal: false,
@@ -353,7 +351,7 @@ pub fn main() {
         width: 0,
         id: "DG_Select".to_string(),
         active: true,
-        drawn: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let de_check: Box<dyn Interface> = Box::new(CheckBox {
@@ -364,7 +362,7 @@ pub fn main() {
         width: 0,
         id: "DE_Select".to_string(),
         active: true,
-        drawn: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let ma_check: Box<dyn Interface> = Box::new(CheckBox {
@@ -373,7 +371,7 @@ pub fn main() {
         location: Point::new(40, 40),
         id: "MA_Select".to_string(),
         active: true,
-        drawn: RefCell::new(false),
+        cached_texture: RefCell::new(None),
         height: 0,
         width: 0,
     });
@@ -386,7 +384,7 @@ pub fn main() {
         width: 0,
         id: "MG_Select".to_string(),
         active: true,
-        drawn: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let ra_check: Box<dyn Interface> = Box::new(CheckBox {
@@ -397,7 +395,7 @@ pub fn main() {
         width: 0,
         id: "RA_Select".to_string(),
         active: true,
-        drawn: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let save_widget_display: Box<dyn Interface> = Box::new(InputBox {
@@ -410,7 +408,6 @@ pub fn main() {
         width: 0,
         id: String::from("Display"),
         location: Point::new(0, 0),
-        drawn: RefCell::new(false),
         clicked_on: false,
     });
 
@@ -424,7 +421,7 @@ pub fn main() {
         width: 0,
         id: String::from("File_Name"),
         location: Point::new(0, 0),
-        drawn: RefCell::new(false),
+
         clicked_on: false,
     });
 
@@ -440,7 +437,7 @@ pub fn main() {
         current_display: home_dir.to_string(),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
+
         scroll_slider: RefCell::new(Slider {
             height: 0,
             width: 20,
@@ -453,8 +450,8 @@ pub fn main() {
             range: 1,
             value: 0,
             slider_offset_axis: 0,
-            drawn: RefCell::new(false),
-            cached_texture: None,
+
+            cached_texture: RefCell::new(None),
             is_vertical: true,
             minimal: true,
         }),
@@ -473,8 +470,8 @@ pub fn main() {
         id: String::from("Save_Wid_Save"),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+        hovering: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let generate_grid: Box<dyn Interface> = Box::new(StandardButton {
@@ -488,8 +485,8 @@ pub fn main() {
         id: String::from("Gen_Grid"),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+        hovering: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let save_widget_exit: Box<dyn Interface> = Box::new(StandardButton {
@@ -503,8 +500,8 @@ pub fn main() {
         id: String::from("Save_Wid_Exit"),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+        hovering: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     /*----- File Explorer Components ----- */
@@ -520,8 +517,8 @@ pub fn main() {
         id: String::from("START"),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+        hovering: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let piece_select: Box<dyn Interface> = Box::new(OptionButton::new(
@@ -574,8 +571,8 @@ pub fn main() {
         id: String::from("Upload Map"),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+        hovering: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let save_map_button: Box<dyn Interface> = Box::new(StandardButton {
@@ -589,8 +586,8 @@ pub fn main() {
         id: String::from("Save Map"),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+        hovering: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let debug_window = Box::new(DisplayBox::new(
@@ -640,8 +637,8 @@ pub fn main() {
         active: false,
         range: 100,
         slider_offset_axis: 0,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+
+        cached_texture: RefCell::new(None),
         value: 0,
         is_vertical: false,
         minimal: false,
@@ -677,7 +674,6 @@ pub fn main() {
         active: false,
         buttons: board_control_buttons,
         layout: board_control_layout,
-        drawn: false,
         cached_draw_order: None,
         cached_interface_location: None,
         important_component_clicked: false,
@@ -714,7 +710,6 @@ pub fn main() {
         buttons: save_widget_buttons,
         layout: save_layout,
         active: false,
-        drawn: false,
         cached_draw_order: None,
         cached_interface_location: None,
         important_component_clicked: false,
@@ -730,7 +725,7 @@ pub fn main() {
         width: 200,
         id: String::from("Search_File"),
         location: Point::new(window_width as i32 - 200, 1),
-        drawn: RefCell::new(false),
+
         clicked_on: false,
     });
 
@@ -744,7 +739,7 @@ pub fn main() {
         current_display: home_dir.to_string(),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
+
         scroll_slider: RefCell::new(Slider {
             height: 0,
             width: 20,
@@ -757,8 +752,7 @@ pub fn main() {
             range: 1,
             value: 0,
             slider_offset_axis: 0,
-            drawn: RefCell::new(false),
-            cached_texture: None,
+            cached_texture: RefCell::new(None),
             is_vertical: true,
             minimal: true,
         }),
@@ -777,8 +771,8 @@ pub fn main() {
         id: String::from("Back"),
         filter: None,
         active: false,
-        drawn: RefCell::new(false),
-        cached_texture: None,
+        hovering: RefCell::new(false),
+        cached_texture: RefCell::new(None),
     });
 
     let file_select_layout: Vec<Vec<&'static str>> = vec![
@@ -806,7 +800,7 @@ pub fn main() {
         active: false,
         buttons: file_select_buttons,
         layout: file_select_layout,
-        drawn: false,
+
         cached_draw_order: None,
         cached_interface_location: None,
         important_component_clicked: false,
@@ -825,6 +819,8 @@ pub fn main() {
         selected_piece_type: TileType::Obstacle,
         cached_background: None,
         cached_grid: RefCell::new(None),
+        cached_texture: RefCell::new(None),
+        texture_dirty: RefCell::new(true),
         multiple_agents: settings.enable_multiple_agents,
         multiple_goals: settings.enable_multiple_agents,
         agents: vec![],
@@ -834,19 +830,17 @@ pub fn main() {
 
     canvas.set_draw_color(Color::RGB(87, 87, 81));
     canvas.clear();
-    game_board.draw(&mut canvas);
+    game_board.draw(&mut canvas, &texture_creator);
     let (mut window_width, mut window_height) =
         canvas.output_size().expect("Unable to obtain window size");
     'running: loop {
         let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
         let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
-        #[cfg(not(target_os = "windows"))]
-        {
-            canvas.set_draw_color(Color::RGB(87, 87, 81));
-            canvas.clear();
-            game_board.draw(&mut canvas);
-            board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
-        }
+        canvas.set_draw_color(Color::RGB(87, 87, 81));
+        canvas.clear();
+        game_board.draw(&mut canvas, &texture_creator);
+        board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
+
         /*-------- User UI -------- */
         let current_size = canvas.output_size().expect("Unable to obtain window size");
         if game_board.height > current_size.1 || game_board.width > board_width {
@@ -860,31 +854,26 @@ pub fn main() {
 
             game_board.change_location(Point::new(0, 0));
 
-            game_board.draw(&mut canvas);
+            game_board.draw(&mut canvas, &texture_creator);
             board_control_widget.change_location(Point::new(
                 window_width as i32 - board_control_widget.get_width() as i32,
                 board_control_widget.get_location().y(),
             ));
             board_control_widget.change_height(window_height);
-            board_control_widget.change_drawn(false);
             file_select_widget.change_location(Point::new(
                 window_width as i32 / 2 - file_select_widget.get_width() as i32 / 2,
                 file_select_widget.get_location().y(),
             ));
-            file_select_widget.change_drawn(false);
+
             save_widget.change_location(Point::new(
                 window_width as i32 / 2 - save_widget.get_width() as i32 / 2,
                 save_widget.get_location().y(),
             ));
-            save_widget.change_drawn(false);
-            #[cfg(target_os = "windows")]
-            board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
         }
 
         /*-------- Updates User UI Depending on State -------- */
         if save_file {
             board_control_widget.change_active(false);
-            board_control_widget.change_drawn(false);
             save_widget.change_active(true);
             let result = save_widget.get_result();
             if let Some(save_display) = save_widget.buttons.get_mut("Display") {
@@ -900,7 +889,6 @@ pub fn main() {
         } else if select_file {
             /*------- File Selection Menu -------*/
             board_control_widget.change_active(false);
-            board_control_widget.change_drawn(false);
 
             file_select_widget.change_active(true);
 
@@ -931,14 +919,9 @@ pub fn main() {
 
         /*------- File Selection Menu -------*/
         } else {
-            file_select_widget.change_drawn(false);
             file_select_widget.change_active(false);
-            save_widget.change_drawn(false);
             save_widget.change_active(false);
             /*------ Board Editing Components ------*/
-
-            #[cfg(target_os = "windows")]
-            board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
 
             board_control_widget.change_active(true);
             if change_gen_sliders {
@@ -952,6 +935,7 @@ pub fn main() {
         if run_game_board {
             match game_board.run_board(
                 &mut canvas,
+                &texture_creator,
                 &settings.selected_algorithm,
                 settings.enable_doubling_experiment,
                 settings.enable_dynamic_generation,
@@ -985,7 +969,7 @@ pub fn main() {
             match game_board.display_path_result() {
                 true => {
                     game_board.reset_board();
-                    game_board.draw(&mut canvas);
+                    game_board.draw(&mut canvas, &texture_creator);
                     if let Some(d_window) = board_control_widget.buttons.get_mut("Debug_Window") {
                         if let Some(d_window) = d_window.as_any().downcast_mut::<DisplayBox>() {
                             d_window.clear();
@@ -997,7 +981,7 @@ pub fn main() {
                     display_visual_path_result = false;
                 }
                 false => {
-                    game_board.draw(&mut canvas);
+                    game_board.draw(&mut canvas, &texture_creator);
                     canvas.present();
                     continue;
                 }
@@ -1010,7 +994,7 @@ pub fn main() {
         /*-------- Handle Component Inputs --------*/
         if mouse_state.left() {
             if game_board.on_click(mouse_position).0 {
-                game_board.draw(&mut canvas);
+                game_board.draw(&mut canvas, &texture_creator);
             }
             mouse_clicked_on = true;
             if !select_file || save_file {
@@ -1073,125 +1057,109 @@ pub fn main() {
                 let (clicked_button, (_, inner_button_clicked)) =
                     save_widget.on_click(true, mouse_position);
                 match clicked_button {
-                    Some(id) => {
-                        save_widget.change_drawn(false);
-                        match id.as_str() {
-                            "Display" => {
-                                video_subsystem.text_input().start();
-                            }
-                            "File_Name" => {
-                                video_subsystem.text_input().start();
-                            }
-                            "Save_Wid_Exit" => {
-                                save_file = false;
-                                save_widget.change_active(false);
-                                save_widget.change_result(Some(home_dir.clone()));
-                                game_board.change_active(true);
-                                canvas.set_draw_color(Color::RGB(87, 87, 81));
-                                #[cfg(target_os = "windows")]
-                                canvas.clear();
-                                game_board.draw(&mut canvas);
-                            }
-                            "Save_Wid_Save" => {
-                                let save_path = &save_widget.get_result().expect("No path given");
-                                util::add_file_to_dir_map(
-                                    Rc::clone(&directories),
-                                    save_path.to_string(),
-                                    &settings.save_file,
-                                );
-                                game_board
-                                    .save_to_file(&save_path, &settings.save_file)
-                                    .unwrap();
-                                save_file = false;
-                                save_widget.change_active(false);
-                                save_widget.change_result(Some(home_dir.clone()));
-                                canvas.set_draw_color(Color::RGB(87, 87, 81));
-                                #[cfg(target_os = "windows")]
-                                canvas.clear();
-                                game_board.change_active(true);
-                                game_board.draw(&mut canvas);
-                            }
-                            "Save_File_Exp" => {
-                                if inner_button_clicked.is_some() {
-                                    if let Some(file_exp) =
-                                        save_widget.buttons.get_mut("Save_File_Exp")
+                    Some(id) => match id.as_str() {
+                        "Display" => {
+                            video_subsystem.text_input().start();
+                        }
+                        "File_Name" => {
+                            video_subsystem.text_input().start();
+                        }
+                        "Save_Wid_Exit" => {
+                            save_file = false;
+                            save_widget.change_active(false);
+                            save_widget.change_result(Some(home_dir.clone()));
+                            game_board.change_active(true);
+                            canvas.set_draw_color(Color::RGB(87, 87, 81));
+                            game_board.draw(&mut canvas, &texture_creator);
+                        }
+                        "Save_Wid_Save" => {
+                            let save_path = &save_widget.get_result().expect("No path given");
+                            util::add_file_to_dir_map(
+                                Rc::clone(&directories),
+                                save_path.to_string(),
+                                &settings.save_file,
+                            );
+                            game_board
+                                .save_to_file(&save_path, &settings.save_file)
+                                .unwrap();
+                            save_file = false;
+                            save_widget.change_active(false);
+                            save_widget.change_result(Some(home_dir.clone()));
+                            canvas.set_draw_color(Color::RGB(87, 87, 81));
+                            game_board.change_active(true);
+                            game_board.draw(&mut canvas, &texture_creator);
+                        }
+                        "Save_File_Exp" => {
+                            if inner_button_clicked.is_some() {
+                                if let Some(file_exp) = save_widget.buttons.get_mut("Save_File_Exp")
+                                {
+                                    if let Some(button) =
+                                        file_exp.as_any().downcast_mut::<FileExplorer>()
                                     {
-                                        if let Some(button) =
-                                            file_exp.as_any().downcast_mut::<FileExplorer>()
-                                        {
-                                            let new_result = inner_button_clicked.expect("Nope");
+                                        let new_result = inner_button_clicked.expect("Nope");
 
-                                            button.change_display(new_result.clone());
-                                            save_widget.change_result(Some(new_result));
-                                        }
+                                        button.change_display(new_result.clone());
+                                        save_widget.change_result(Some(new_result));
                                     }
                                 }
                             }
-                            _ => {}
                         }
-                    }
+                        _ => {}
+                    },
                     None => {}
                 };
             } else if select_file {
                 let (clicked_button, (_, inner_button_clicked)) =
                     file_select_widget.on_click(true, mouse_position);
                 match clicked_button {
-                    Some(button) => {
-                        //file_select_widget.change_drawn(false);
-                        match button.as_str() {
-                            "Search_File" => {
-                                video_subsystem.text_input().start();
-                            }
-                            "Select_File_Exp" => {
-                                if inner_button_clicked.is_some() {
-                                    if let Some(file_exp) =
-                                        file_select_widget.buttons.get_mut("Select_File_Exp")
+                    Some(button) => match button.as_str() {
+                        "Search_File" => {
+                            video_subsystem.text_input().start();
+                        }
+                        "Select_File_Exp" => {
+                            if inner_button_clicked.is_some() {
+                                if let Some(file_exp) =
+                                    file_select_widget.buttons.get_mut("Select_File_Exp")
+                                {
+                                    if let Some(button) =
+                                        file_exp.as_any().downcast_mut::<FileExplorer>()
                                     {
-                                        if let Some(button) =
-                                            file_exp.as_any().downcast_mut::<FileExplorer>()
-                                        {
-                                            let new_result = inner_button_clicked.expect("Nope");
+                                        let new_result = inner_button_clicked.expect("Nope");
 
-                                            button.change_display(new_result.clone());
+                                        button.change_display(new_result.clone());
+                                        file_select_widget.change_result(Some(new_result.clone()));
+                                        if !fileDialog::is_directory(&new_result) {
                                             file_select_widget
-                                                .change_result(Some(new_result.clone()));
-                                            if !fileDialog::is_directory(&new_result) {
-                                                file_select_widget
-                                                    .change_result(Some(home_dir.clone()));
-                                                match scanner::board_from(
-                                                    &new_result,
-                                                    game_board.height,
-                                                    game_board.tile_amount_x,
-                                                ) {
-                                                    Ok(board) => {
-                                                        game_board = board;
-                                                    }
-                                                    Err(_) => {}
+                                                .change_result(Some(home_dir.clone()));
+                                            match scanner::board_from(
+                                                &new_result,
+                                                game_board.height,
+                                                game_board.tile_amount_x,
+                                            ) {
+                                                Ok(board) => {
+                                                    game_board = board;
                                                 }
-                                                select_file = false;
-                                                canvas.set_draw_color(Color::RGB(87, 87, 81));
-                                                #[cfg(target_os = "windows")]
-                                                canvas.clear();
-                                                game_board.active = true;
-                                                game_board.draw(&mut canvas);
+                                                Err(_) => {}
                                             }
+                                            select_file = false;
+                                            canvas.set_draw_color(Color::RGB(87, 87, 81));
+                                            game_board.active = true;
+                                            game_board.draw(&mut canvas, &texture_creator);
                                         }
                                     }
                                 }
                             }
-                            "Back" => {
-                                file_select_widget.change_active(false);
-                                select_file = false;
-                                canvas.set_draw_color(Color::RGB(87, 87, 81));
-                                #[cfg(target_os = "windows")]
-                                canvas.clear();
-                                file_select_widget.change_result(Some(home_dir.clone()));
-                                game_board.change_active(true);
-                                game_board.draw(&mut canvas);
-                            }
-                            _ => {}
                         }
-                    }
+                        "Back" => {
+                            file_select_widget.change_active(false);
+                            select_file = false;
+                            canvas.set_draw_color(Color::RGB(87, 87, 81));
+                            file_select_widget.change_result(Some(home_dir.clone()));
+                            game_board.change_active(true);
+                            game_board.draw(&mut canvas, &texture_creator);
+                        }
+                        _ => {}
+                    },
                     None => {}
                 }
             } else {
@@ -1223,10 +1191,10 @@ pub fn main() {
                             );*/
                         }
                         "Upload Map" => {
-                            game_board.draw(&mut canvas);
+                            game_board.draw(&mut canvas, &texture_creator);
                             game_board.change_active(false);
                             select_file = true;
-                            game_board.draw(&mut canvas);
+                            game_board.draw(&mut canvas, &texture_creator);
                         }
                         "Save Map" => {
                             save_file = true;
@@ -1277,7 +1245,7 @@ pub fn main() {
                                     );
                                 }
                             }
-                            game_board.draw(&mut canvas);
+                            game_board.draw(&mut canvas, &texture_creator);
                         }
                         "DG_Select" => {
                             if let Some(checkbox) =
@@ -1393,7 +1361,6 @@ pub fn main() {
                                     button.change_filter(file_select_widget.result.clone());
                                 }
                             }
-                            file_select_widget.change_drawn(false);
                         } else if save_widget.is_active() {
                             if let Some(file_exp) = save_widget.buttons.get_mut("Save_File_Exp") {
                                 if let Some(button) =
@@ -1419,7 +1386,6 @@ pub fn main() {
                                     display.clicked_on = false;
                                 }
                             }
-                            save_widget.change_drawn(false);
                         }
 
                         video_subsystem.text_input().stop()
@@ -1438,9 +1404,7 @@ pub fn main() {
                                 }
                                 None => file_select_widget.result,
                             };
-                            file_select_widget.change_drawn(false);
                         } else if save_widget.is_active() {
-                            save_widget.change_drawn(false);
                             if let Some(save_display) = save_widget.buttons.get_mut("Display") {
                                 if let Some(display) =
                                     save_display.as_any().downcast_mut::<InputBox>()
@@ -1483,7 +1447,6 @@ pub fn main() {
                                 Some(tex) => Some(tex + &text),
                                 None => Some(text),
                             };
-                            file_select_widget.change_drawn(false);
                         } else if save_widget.is_active() {
                             if let Some(save_display) = save_widget.buttons.get_mut("Display") {
                                 if let Some(display) =
@@ -1514,7 +1477,6 @@ pub fn main() {
                                     }
                                 }
                             }
-                            save_widget.change_drawn(false);
                         }
                     }
                 }
@@ -1867,6 +1829,8 @@ mod tests {
             selected_piece_type: TileType::Obstacle,
             cached_background: None,
             cached_grid: RefCell::new(None),
+            cached_texture: RefCell::new(None),
+            texture_dirty: RefCell::new(true),
             multiple_agents: false,
             multiple_goals: false,
             agents: vec![],

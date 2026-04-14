@@ -53,7 +53,6 @@ pub struct Widget {
     /// Grid layout specification (rows of component IDs)
     pub layout: Vec<Vec<&'static str>>,
     /// Whether the widget background has been drawn
-    pub drawn: bool,
     /// Flag indicating a modal component is blocking input
     pub important_component_clicked: bool,
     /// Cached mapping of grid positions to component IDs
@@ -84,8 +83,6 @@ impl Widget {
 
         if self.important_component_clicked {
             if after {
-                println!("Yellow");
-                self.change_drawn(false);
                 for (_, button) in self
                     .buttons
                     .iter_mut()
@@ -188,7 +185,6 @@ impl Widget {
         }
         if dirty {
             println!("No");
-            self.change_drawn(false);
         }
         println!("Result: {:#?}", result);
         return result;
@@ -197,16 +193,6 @@ impl Widget {
     /// Get the widget's unique identifier.
     fn get_id(&self) -> String {
         self.id.to_string()
-    }
-
-    /// Update the draw state of the widget and all children.
-    pub fn change_drawn(&mut self, new_val: bool) {
-        if self.drawn != new_val {
-            self.drawn = new_val;
-            for b in self.buttons.values_mut() {
-                b.change_drawn(new_val);
-            }
-        }
     }
 
     /// Placeholder for widget result computation.
@@ -378,29 +364,13 @@ impl Widget {
         mouse_state: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        #[cfg(target_os = "windows")]
-        if !self.drawn {
-            let rectangle = self.get_rect();
-            let outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);
-            canvas.set_draw_color(BLACK);
-            canvas.fill_rect(outline).unwrap();
-            canvas.set_draw_color(SECONDARY_COLOR);
-            canvas.fill_rect(rectangle).unwrap();
-            self.drawn = true;
-            self.set_widget_layout();
-        }
-
-        #[cfg(not(target_os = "windows"))]
-        {
-            let rectangle = self.get_rect();
-            let outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);
-            canvas.set_draw_color(BLACK);
-            canvas.fill_rect(outline).unwrap();
-            canvas.set_draw_color(SECONDARY_COLOR);
-            canvas.fill_rect(rectangle).unwrap();
-            self.drawn = true;
-            self.set_widget_layout();
-        }
+        let rectangle = self.get_rect();
+        let outline = Rect::from_center(rectangle.center(), self.width + 5, self.height + 5);
+        canvas.set_draw_color(BLACK);
+        canvas.fill_rect(outline).unwrap();
+        canvas.set_draw_color(SECONDARY_COLOR);
+        canvas.fill_rect(rectangle).unwrap();
+        self.set_widget_layout();
 
         if let Some(button_ids) = &self.cached_draw_order {
             for id in button_ids {
@@ -415,7 +385,6 @@ impl Widget {
                         a.change_active(self.active);
                     }
                     a.draw(canvas, texture_creator, mouse_state, font);
-                    a.change_drawn(true);
                 }
             }
         } else {
@@ -433,7 +402,6 @@ impl Widget {
                         a.change_active(self.active);
                     }
                     a.draw(canvas, texture_creator, mouse_state, font);
-                    a.change_drawn(true);
                 }
             }
             self.cached_draw_order = Some(button_ids);
@@ -466,8 +434,8 @@ mod tests {
             id: id.to_string(),
             filter: None,
             active: false,
-            drawn: RefCell::new(false),
-            cached_texture: None,
+            cached_texture: RefCell::new(None),
+            hovering: RefCell::new(false),
         })
     }
 
@@ -488,7 +456,6 @@ mod tests {
             active: true,
             buttons,
             layout,
-            drawn: false,
             cached_draw_order: None,
             cached_interface_location: None,
             important_component_clicked: false,
@@ -565,29 +532,6 @@ mod tests {
     }
 
     #[test]
-    fn test_widget_drawn_state() {
-        let mut widget = make_test_widget();
-        assert!(!widget.drawn);
-        widget.change_drawn(true);
-        assert!(widget.drawn);
-        widget.change_drawn(false);
-        assert!(!widget.drawn);
-    }
-
-    #[test]
-    fn test_widget_drawn_cascades_to_children() {
-        let mut widget = make_test_widget();
-        widget.change_drawn(true);
-        for (_, btn) in widget.buttons.iter() {
-            assert!(btn.is_drawn());
-        }
-        widget.change_drawn(false);
-        for (_, btn) in widget.buttons.iter() {
-            assert!(!btn.is_drawn());
-        }
-    }
-
-    #[test]
     fn test_widget_mouse_over_inside() {
         let widget = make_test_widget();
         assert!(widget.mouse_over_component(Point::new(300, 150)));
@@ -646,7 +590,6 @@ mod tests {
             active: true,
             buttons,
             layout,
-            drawn: false,
             cached_draw_order: None,
             cached_interface_location: None,
             important_component_clicked: false,
@@ -666,16 +609,6 @@ mod tests {
     // ------- set_widget_layout -------
 
     #[test]
-    fn test_set_widget_layout_populates_cache() {
-        let mut widget = make_test_widget();
-        widget.change_drawn(true);
-        assert!(widget.cached_interface_location.is_none());
-        let _ = widget.buttons.get_mut("btn_a");
-        widget.set_widget_layout();
-        assert!(widget.cached_interface_location.is_some());
-    }
-
-    #[test]
     fn test_set_widget_layout_with_single_component() {
         let buttons: HashMap<&'static str, Box<dyn Interface>> =
             HashMap::from([("only", make_button("only"))]);
@@ -689,7 +622,6 @@ mod tests {
             active: true,
             buttons,
             layout,
-            drawn: false,
             cached_draw_order: None,
             cached_interface_location: None,
             important_component_clicked: false,
@@ -718,7 +650,6 @@ mod tests {
             active: true,
             buttons,
             layout,
-            drawn: false,
             cached_draw_order: None,
             cached_interface_location: None,
             important_component_clicked: false,

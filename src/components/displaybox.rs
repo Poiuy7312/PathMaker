@@ -51,7 +51,6 @@ impl DisplayBox {
     pub fn clear(&mut self) {
         self.current_display.clear();
         *self.scroll_offset.borrow_mut() = 0;
-        self.change_drawn(false);
     }
 
     pub fn add_line(&mut self, new_str: &str) {
@@ -59,7 +58,6 @@ impl DisplayBox {
         if self.current_display.len() > 1000 {
             self.current_display.remove(0);
         }
-        self.change_drawn(false);
     }
 
     pub fn scroll_up(&mut self) {
@@ -67,7 +65,6 @@ impl DisplayBox {
         if *offset > 0 {
             *offset -= 1;
         }
-        self.change_drawn(false);
     }
 
     pub fn scroll_down(&mut self) {
@@ -77,7 +74,6 @@ impl DisplayBox {
         if *offset < total_lines - visible {
             *offset += 1;
         }
-        self.change_drawn(false);
     }
 
     pub fn get_rect(&self) -> Rect {
@@ -108,18 +104,15 @@ impl Component for DisplayBox {
 
     fn change_location(&mut self, new_location: Point) {
         self.location = new_location;
-        self.change_drawn(false);
     }
 
     fn change_width(&mut self, new_width: u32) {
         self.width = new_width;
         self.max_lines_visible = (self.height as i32 / self.line_height) as usize;
-        self.change_drawn(false);
     }
 
     fn change_active(&mut self, new_value: bool) {
         self.active = new_value;
-        self.change_drawn(false);
     }
 
     fn is_active(&self) -> bool {
@@ -141,7 +134,6 @@ impl Component for DisplayBox {
     fn change_height(&mut self, new_height: u32) {
         self.height = new_height;
         self.max_lines_visible = (new_height as i32 / self.line_height) as usize;
-        self.change_drawn(false);
     }
 }
 
@@ -182,14 +174,6 @@ impl Interface for DisplayBox {
         self
     }
 
-    fn change_drawn(&self, new_val: bool) {
-        *self.drawn.borrow_mut() = new_val;
-    }
-
-    fn is_drawn(&self) -> bool {
-        *self.drawn.borrow()
-    }
-
     fn change_label(&mut self, _new_text: String) {}
 
     fn draw<'a>(
@@ -199,9 +183,6 @@ impl Interface for DisplayBox {
         _: Point,
         font: &mut ttf::Font<'_, 'static>,
     ) {
-        if self.is_drawn() {
-            return;
-        }
         let rect = self.get_rect();
 
         canvas.set_draw_color(self.background_color);
@@ -261,7 +242,5 @@ impl Interface for DisplayBox {
             canvas.set_draw_color(SECONDARY_COLOR);
             canvas.fill_rect(scrollbar).unwrap();
         }
-
-        self.change_drawn(true);
     }
 }
