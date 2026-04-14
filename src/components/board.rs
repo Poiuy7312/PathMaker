@@ -27,8 +27,9 @@ use rand::seq::SliceRandom;
 use rand::{rng, Rng};
 use sdl2::mouse::MouseState;
 use sdl2::pixels::Color;
+use sdl2::pixels::PixelFormatEnum;
 use sdl2::rect::{Point, Rect};
-use sdl2::render::{Canvas, TextureCreator};
+use sdl2::render::{Canvas, Texture, TextureCreator};
 use sdl2::video::{Window, WindowContext};
 use serde::de::{self, Deserializer, MapAccess, SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
@@ -242,6 +243,10 @@ pub struct Board {
     pub cached_background: Option<Rect>,
     /// Cached tile grid (RefCell for interior mutability)
     pub cached_grid: RefCell<Option<Vec<Tile>>>,
+    /// Cached board texture for efficient rendering
+    pub cached_texture: RefCell<Option<Texture<'static>>>,
+    /// Whether the board texture needs re-rendering
+    pub texture_dirty: RefCell<bool>,
 }
 
 /// Deserialize a Board from JSON.
@@ -327,6 +332,8 @@ impl<'de> Deserialize<'de> for Board {
             multiple_goals: data.multiple_goals,
             cached_background: None,
             cached_grid: RefCell::new(Some(grid)),
+            cached_texture: RefCell::new(None),
+            texture_dirty: RefCell::new(false),
             agents: vec![],
             goals: data.goals,
             starts: data.starts,
@@ -459,6 +466,7 @@ impl Component for Board {
                     _ => {}
                 }
 
+                self.mark_texture_dirty();
                 return (true, Some(self.get_id()));
             }
         }
@@ -919,9 +927,10 @@ impl Board {
     /// * `iterations` - Number of iterations to run
     /// * `weight_range` - Maximum tile weight
     /// * `gen_mode` - Generation mode (Random or City)
-    pub fn run_board(
+    pub fn run_board<'a>(
         &mut self,
         canvas: &mut Canvas<Window>,
+        texture_creator: &'a TextureCreator<WindowContext>,
         algorithm: &str,
         doubling: bool,
         dyn_gen: bool,
@@ -1059,13 +1068,13 @@ impl Board {
                         break;
                     }
 
-                    self.draw(canvas);
+                    self.draw(canvas, texture_creator);
                 }
             }
             if doubling {
                 obstacles *= 2;
             }
-            self.draw(canvas);
+            self.draw(canvas, texture_creator);
         }
         let mut data_display = String::new();
         for (_, data) in &data_map {
@@ -1166,6 +1175,10 @@ impl Board {
         self.agents.clear();
     }
 
+    pub fn mark_texture_dirty(&self) {
+        *self.texture_dirty.borrow_mut() = true;
+    }
+
     /// Get the bounding rectangle of the board.
     fn get_rect(&self) -> Rect {
         if self.cached_background.is_none() {
@@ -1182,26 +1195,53 @@ impl Board {
 
     /// Draw the entire board to the canvas.
     ///
-    /// Iterates through all tiles and draws dirty tiles.
-    /// Updates the cached grid after drawing.
-    pub fn draw<'a>(&self, canvas: &mut Canvas<Window>) {
-        #[cfg(target_os = "windows")]
-        if self.cached_background.is_none() {
-            canvas.set_draw_color(WHITE);
-            canvas.fill_rect(self.get_rect()).unwrap();
+    /// Uses cached texture when available, only re-renders when dirty.
+    pub fn draw(
+        &self,
+        canvas: &mut Canvas<Window>,
+        texture_creator: &TextureCreator<WindowContext>,
+    ) {
+        let is_dirty = *self.texture_dirty.borrow();
+
+        if is_dirty || self.cached_texture.borrow().is_none() {
+            let mut target = texture_creator
+                .create_texture(
+                    PixelFormatEnum::RGBA8888,
+                    sdl2::render::TextureAccess::Target,
+                    self.width,
+                    self.height,
+                )
+                .unwrap();
+            target.set_blend_mode(sdl2::render::BlendMode::Blend);
+
+            canvas
+                .with_texture_canvas(&mut target, |target_canvas| {
+                    target_canvas.set_draw_color(WHITE);
+                    target_canvas
+                        .fill_rect(Rect::new(0, 0, self.width, self.height))
+                        .unwrap();
+
+                    let mut borrow = self.cached_grid.borrow_mut();
+                    if let Some(grid) = borrow.as_mut() {
+                        for tile in grid.iter_mut() {
+                            tile.draw(true, Point::new(0, 0), target_canvas);
+                        }
+                    }
+                })
+                .expect("Failed to create canvas for texture");
+
+            *self.cached_texture.borrow_mut() =
+                Some(unsafe { std::mem::transmute::<Texture<'_>, Texture<'static>>(target) });
+            *self.texture_dirty.borrow_mut() = false;
         }
-        #[cfg(not(target_os = "windows"))]
-        {
-            canvas.set_draw_color(WHITE);
-            canvas.fill_rect(self.get_rect()).unwrap();
-        }
-        let change_layout = self.cached_background.is_none();
-        let mut borrow = self.cached_grid.borrow_mut();
-        if let Some(grid) = borrow.as_mut() {
-            for tile in grid.iter_mut() {
-                tile.draw(change_layout, self.location, canvas);
-            }
-        }
+
+        canvas
+            .copy(
+                self.cached_texture.borrow().as_ref().unwrap(),
+                None,
+                self.get_rect(),
+            )
+            .unwrap();
     }
 }
 
@@ -1314,6 +1354,8 @@ pub mod scanner {
                     multiple_goals: false,
                     cached_background: None,
                     cached_grid: RefCell::new(Some(tiles)),
+                    cached_texture: RefCell::new(None),
+                    texture_dirty: RefCell::new(true),
                     agents: vec![],
                     goals: vec![],
                     starts: vec![],
@@ -1361,6 +1403,8 @@ mod tests {
             agents: vec![],
             cached_background: None,
             cached_grid: RefCell::new(None),
+            cached_texture: RefCell::new(None),
+            texture_dirty: RefCell::new(true),
         }
     }
 
