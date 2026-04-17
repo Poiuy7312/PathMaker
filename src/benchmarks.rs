@@ -342,6 +342,7 @@ pub fn run_overall_benchmark(
                             ((config.grid_size - 1) * config.grid_size + (config.grid_size - 1))
                                 as usize,
                         ],
+                        updated_tiles: vec![],
                     };
 
                     /*board.generate_random_grid(

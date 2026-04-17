@@ -236,6 +236,7 @@ pub struct Board {
     pub multiple_goals: bool,
     /// Active pathfinding agents
     pub agents: Vec<Agent>,
+    pub updated_tiles: Vec<usize>,
     /// Cached background rectangle
     pub cached_background: Option<Rect>,
     /// Cached tile grid (RefCell for interior mutability)
@@ -334,6 +335,7 @@ impl<'de> Deserialize<'de> for Board {
             agents: vec![],
             goals: data.goals,
             starts: data.starts,
+            updated_tiles: vec![],
         })
     }
 }
@@ -1089,7 +1091,6 @@ impl Board {
         let w = self.tile_amount_x as u32;
 
         let mut all_finished = true;
-        self.mark_texture_dirty();
 
         for agent in &mut self.agents {
             let path_len = agent.path.len();
@@ -1106,6 +1107,7 @@ impl Board {
                         if let Some(tile) = grid.get_mut(old_idx) {
                             if tile.tile_type != TileType::Enemy {
                                 tile.change_tile_type(TileType::Path);
+                                self.updated_tiles.push(old_idx);
                             }
                         }
                     }
@@ -1113,6 +1115,7 @@ impl Board {
                     if let Some(tile) = grid.get_mut(pos_idx) {
                         if tile.tile_type != TileType::Enemy {
                             tile.change_tile_type(TileType::Player);
+                            self.updated_tiles.push(pos_idx);
                         }
                     }
                 }
@@ -1122,6 +1125,7 @@ impl Board {
                     if let Some(tile) = grid.get_mut(end_idx) {
                         if tile.tile_type != TileType::Enemy {
                             tile.change_tile_type(TileType::Floor);
+                            self.updated_tiles.push(end_idx);
                         }
                     }
                 }
@@ -1129,24 +1133,24 @@ impl Board {
                 if let Some(goal_idx) = util::get_idx_from_coordinate(agent.goal, w, w) {
                     if let Some(tile) = grid.get_mut(goal_idx) {
                         tile.change_tile_type(TileType::Enemy);
+                        self.updated_tiles.push(goal_idx);
                     }
                 }
             }
         }
 
-        if all_finished {
-            return true;
-        }
-
-        false
+        all_finished
     }
 
     pub fn clear_path(&mut self) {
         let mut grid = self.cached_grid.borrow_mut();
         let grid = grid.as_mut().unwrap();
-        grid.iter_mut()
-            .filter(|tile| tile.tile_type == TileType::Path)
-            .for_each(|tile| tile.change_tile_type(TileType::Floor));
+        for &idx in &self.updated_tiles {
+            if grid[idx].tile_type == TileType::Path {
+                grid[idx].change_tile_type(TileType::Floor);
+            }
+        }
+        self.updated_tiles.clear();
     }
 
     pub fn reset_board(&mut self) {
@@ -1177,6 +1181,23 @@ impl Board {
 
     pub fn mark_texture_dirty(&self) {
         *self.texture_dirty.borrow_mut() = true;
+    }
+
+    pub fn draw_tiles(&self, canvas: &mut Canvas<Window>) {
+        if self.updated_tiles.is_empty() {
+            return;
+        }
+
+        let borrow = self.cached_grid.borrow();
+        if let Some(grid) = borrow.as_ref() {
+            for &idx in &self.updated_tiles {
+                if let Some(tile) = grid.get(idx) {
+                    let tile_rect = tile.get_rect(self.location);
+                    canvas.set_draw_color(tile.cached_color);
+                    canvas.fill_rect(tile_rect).unwrap();
+                }
+            }
+        }
     }
 
     /// Get the bounding rectangle of the board.
@@ -1242,6 +1263,7 @@ impl Board {
                 self.get_rect(),
             )
             .unwrap();
+        self.draw_tiles(canvas);
     }
 }
 
@@ -1359,6 +1381,7 @@ pub mod scanner {
                     agents: vec![],
                     goals: vec![],
                     starts: vec![],
+                    updated_tiles: vec![],
                 })
             }
             Err(_) => return Err("Invalid JSON"),
@@ -1405,6 +1428,7 @@ mod tests {
             cached_grid: RefCell::new(None),
             cached_texture: RefCell::new(None),
             texture_dirty: RefCell::new(true),
+            updated_tiles: vec![],
         }
     }
 
@@ -1799,7 +1823,7 @@ mod tests {
         });
 
         let mut calls = 0;
-        while !board.display_path_result() {
+        while let false = board.display_path_result() {
             calls += 1;
             if calls > 100 {
                 panic!("display_path_result did not complete");
@@ -1821,7 +1845,7 @@ mod tests {
             path: vec![(0, 0), (1, 0), (2, 0)],
         });
 
-        while !board.display_path_result() {}
+        while let false = board.display_path_result() {}
         board.clear_path();
 
         let grid = board.cached_grid.borrow();
@@ -1853,7 +1877,7 @@ mod tests {
         });
 
         let mut calls = 0;
-        while !board.display_path_result() {
+        while let false = board.display_path_result() {
             calls += 1;
             if calls > 100 {
                 panic!("display_path_result did not complete");

@@ -828,6 +828,7 @@ pub fn main() {
         agents: vec![],
         starts: vec![],
         goals: vec![],
+        updated_tiles: vec![],
     };
 
     canvas.set_draw_color(Color::RGB(87, 87, 81));
@@ -971,7 +972,6 @@ pub fn main() {
             match game_board.display_path_result() {
                 true => {
                     game_board.reset_board();
-                    game_board.draw(&mut canvas, &texture_creator);
                     if let Some(d_window) = board_control_widget.buttons.get_mut("Debug_Window") {
                         if let Some(d_window) = d_window.as_any().downcast_mut::<DisplayBox>() {
                             d_window.clear();
@@ -985,7 +985,6 @@ pub fn main() {
                 false => {
                     game_board.draw(&mut canvas, &texture_creator);
                     canvas.present();
-                    continue;
                 }
             }
         }
@@ -1838,6 +1837,7 @@ mod tests {
             agents: vec![],
             starts: vec![],
             goals: vec![],
+            updated_tiles: vec![],
         }
     }
 
