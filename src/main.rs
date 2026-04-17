@@ -166,6 +166,9 @@ pub fn main() {
         .present_vsync()
         .build()
         .unwrap();
+    canvas
+        .set_logical_size(window_width, window_height)
+        .unwrap();
 
     let (canvas_width, canvas_height) = canvas
         .output_size()
@@ -852,6 +855,9 @@ pub fn main() {
         }
         if (window_width, window_height) != current_size {
             (window_width, window_height) = current_size;
+            canvas
+                .set_logical_size(window_width, window_height)
+                .unwrap();
             canvas.set_draw_color(Color::RGB(87, 87, 81));
             canvas.clear();
 
