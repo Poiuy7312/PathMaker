@@ -106,11 +106,13 @@ impl Component for DisplayBox {
 
     fn change_location(&mut self, new_location: Point) {
         self.location = new_location;
+        self.cached_texture.replace(None);
     }
 
     fn change_width(&mut self, new_width: u32) {
         self.width = new_width;
         self.max_lines_visible = (self.height as i32 / self.line_height) as usize;
+        self.cached_texture.replace(None);
     }
 
     fn change_active(&mut self, new_value: bool) {
@@ -136,6 +138,7 @@ impl Component for DisplayBox {
     fn change_height(&mut self, new_height: u32) {
         self.height = new_height;
         self.max_lines_visible = (new_height as i32 / self.line_height) as usize;
+        self.cached_texture.replace(None);
     }
 }
 
