@@ -171,9 +171,7 @@ pub fn main() {
     let (canvas_width, canvas_height) = canvas
         .output_size()
         .unwrap_or((window_width, window_height));
-    let (logical_width, logical_height) = canvas.logical_size();
-    let scale_factor = canvas_width / logical_width;
-    println!("{}", scale_factor);
+
     let control_width = canvas_width.saturating_sub(board_width);
     let control_height = canvas_height;
     let debug_height = canvas_height / 4;
@@ -838,6 +836,9 @@ pub fn main() {
     canvas.set_draw_color(Color::RGB(87, 87, 81));
     canvas.clear();
     game_board.draw(&mut canvas, &texture_creator);
+    canvas
+        .set_logical_size(settings.window_width, settings.window_height)
+        .unwrap();
     let (mut window_width, mut window_height) =
         canvas.output_size().expect("Unable to obtain window size");
     'running: loop {
@@ -859,6 +860,9 @@ pub fn main() {
             canvas
                 .window_mut()
                 .set_size(window_width, window_height)
+                .unwrap();
+            canvas
+                .set_logical_size(window_width, window_height)
                 .unwrap();
             canvas.set_draw_color(Color::RGB(87, 87, 81));
             canvas.clear();
