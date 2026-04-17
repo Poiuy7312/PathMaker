@@ -20,11 +20,10 @@ pub struct DisplayBox {
     pub active: bool,
     pub background_color: Color,
     pub text_color: Color,
-    pub drawn: RefCell<bool>,
     pub scroll_offset: RefCell<i32>,
     pub max_lines_visible: usize,
     pub line_height: i32,
-    pub cached_texture: RefCell<Option<Texture<'static>>>,
+    pub cached_texture: RefCell<Option<Vec<(Texture<'static>, Rect)>>>,
 }
 
 impl DisplayBox {
@@ -40,7 +39,6 @@ impl DisplayBox {
             active: true,
             background_color: Color::RGB(30, 30, 30),
             text_color: WHITE,
-            drawn: RefCell::new(false),
             scroll_offset: RefCell::new(0),
             max_lines_visible,
             line_height,
@@ -51,6 +49,7 @@ impl DisplayBox {
     pub fn clear(&mut self) {
         self.current_display.clear();
         *self.scroll_offset.borrow_mut() = 0;
+        self.cached_texture.replace(None);
     }
 
     pub fn add_line(&mut self, new_str: &str) {
@@ -58,6 +57,7 @@ impl DisplayBox {
         if self.current_display.len() > 1000 {
             self.current_display.remove(0);
         }
+        self.cached_texture.replace(None);
     }
 
     pub fn scroll_up(&mut self) {
@@ -65,6 +65,7 @@ impl DisplayBox {
         if *offset > 0 {
             *offset -= 1;
         }
+        self.cached_texture.replace(None);
     }
 
     pub fn scroll_down(&mut self) {
@@ -74,6 +75,7 @@ impl DisplayBox {
         if *offset < total_lines - visible {
             *offset += 1;
         }
+        self.cached_texture.replace(None);
     }
 
     pub fn get_rect(&self) -> Rect {
@@ -198,32 +200,49 @@ impl Interface for DisplayBox {
         let end_idx =
             (scroll_offset as usize + self.max_lines_visible).min(self.current_display.len());
         let start_idx = scroll_offset as usize;
+        if self.cached_texture.borrow().is_none() {
+            let mut textures = Vec::with_capacity(self.current_display.len());
+            for (i, line) in self
+                .current_display
+                .iter()
+                .enumerate()
+                .take(end_idx)
+                .skip(start_idx)
+            {
+                let y = start_y + ((i - start_idx) as i32) * self.line_height;
 
-        for (i, line) in self
-            .current_display
-            .iter()
-            .enumerate()
-            .take(end_idx)
-            .skip(start_idx)
-        {
-            let y = start_y + ((i - start_idx) as i32) * self.line_height;
+                let text_width = (line.len() as u32) * 8;
+                let text_rect = if text_width > max_width {
+                    Rect::new(rect.x() + 5, y, max_width, self.line_height as u32)
+                } else {
+                    Rect::new(rect.x() + 5, y, text_width, self.line_height as u32)
+                };
 
-            let text_width = (line.len() as u32) * 8;
-            let text_rect = if text_width > max_width {
-                Rect::new(rect.x() + 5, y, max_width, self.line_height as u32)
-            } else {
-                Rect::new(rect.x() + 5, y, text_width, self.line_height as u32)
-            };
-
-            match font.render(line).blended(self.text_color) {
-                Ok(font_surface) => {
-                    let font_texture = texture_creator.create_texture_from_surface(&font_surface);
-                    if font_texture.is_ok() {
-                        let _ = canvas.copy(&font_texture.unwrap(), None, text_rect);
+                match font.render(line).blended(self.text_color) {
+                    Ok(font_surface) => {
+                        let font_texture =
+                            texture_creator.create_texture_from_surface(&font_surface);
+                        if font_texture.is_ok() {
+                            unsafe {
+                                textures.push((
+                                    std::mem::transmute::<Texture<'_>, Texture<'static>>(
+                                        font_texture.unwrap(),
+                                    ),
+                                    text_rect,
+                                ));
+                            }
+                        }
                     }
+                    Err(_) => {}
                 }
-                Err(_) => {}
             }
+
+            self.cached_texture.replace(Some(textures));
+        }
+        for (texture, rect) in self.cached_texture.borrow().as_ref().unwrap() {
+            canvas
+                .copy(texture, None, *rect)
+                .expect("DisplayBox unable to display text");
         }
 
         if self.current_display.len() > self.max_lines_visible {
