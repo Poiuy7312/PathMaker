@@ -1150,6 +1150,7 @@ impl Board {
                 grid[idx].change_tile_type(TileType::Floor);
             }
         }
+        self.cached_texture.replace(None);
         self.updated_tiles.clear();
     }
 
