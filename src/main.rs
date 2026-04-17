@@ -138,6 +138,7 @@ pub fn main() {
     let window_height: u32 = settings.window_height;
     let tiles_x: u32 = settings.tiles_x;
     let tiles_y: u32 = settings.tiles_y;
+
     let sdl_context = sdl2::init().unwrap();
 
     let video_subsystem = sdl_context.video().unwrap();
@@ -148,6 +149,7 @@ pub fn main() {
     let mut window = video_subsystem
         .window("PathMaker", window_width, window_height)
         .resizable()
+        .allow_highdpi()
         .position_centered()
         .build()
         .expect("Failed to render Window");
@@ -165,13 +167,12 @@ pub fn main() {
         .present_vsync()
         .build()
         .unwrap();
-    canvas
-        .set_logical_size(window_width, window_height)
-        .unwrap();
 
     let (canvas_width, canvas_height) = canvas
         .output_size()
         .unwrap_or((window_width, window_height));
+    let scale_factor = canvas_width / window_width;
+    println!("{}", scale_factor);
     let control_width = canvas_width.saturating_sub(board_width);
     let control_height = canvas_height;
     let debug_height = canvas_height / 4;
@@ -855,7 +856,8 @@ pub fn main() {
         if (window_width, window_height) != current_size {
             (window_width, window_height) = current_size;
             canvas
-                .set_logical_size(window_width, window_height)
+                .window_mut()
+                .set_size(window_width, window_height)
                 .unwrap();
             canvas.set_draw_color(Color::RGB(87, 87, 81));
             canvas.clear();
