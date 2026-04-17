@@ -171,7 +171,8 @@ pub fn main() {
     let (canvas_width, canvas_height) = canvas
         .output_size()
         .unwrap_or((window_width, window_height));
-    let scale_factor = canvas_width / window_width;
+    let (logical_width, logical_height) = canvas.logical_size();
+    let scale_factor = canvas_width / logical_width;
     println!("{}", scale_factor);
     let control_width = canvas_width.saturating_sub(board_width);
     let control_height = canvas_height;
