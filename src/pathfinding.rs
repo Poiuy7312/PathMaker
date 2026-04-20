@@ -29,6 +29,7 @@ use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::f32::consts::SQRT_2;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -668,11 +669,12 @@ impl PathfindingAlgorithm for AStarSearch {
                     .and_then(|idx| map.get(idx))
                 {
                     if tile.is_traversable() {
-                        let move_cost = if tile.weight > 1 {
-                            tile.weight as i32
-                        } else {
-                            1
-                        };
+                        let move_cost: i32 = tile.weight as i32
+                            * ((((current.0 - neighbor.0).abs() * (current.1 - neighbor.1).abs())
+                                as f32
+                                * SQRT_2) as u8)
+                                .max(1) as i32;
+
                         let tentative_g = g_score.get(&current).unwrap_or(&i32::MAX) + move_cost;
                         if tentative_g < *g_score.get(&neighbor).unwrap_or(&i32::MAX) {
                             parent.insert(neighbor, current);
