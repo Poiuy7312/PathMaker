@@ -1315,61 +1315,122 @@ pub mod scanner {
         tile_amount: u32,
     ) -> Result<Board, &'static str> {
         let mut board_size = board_size;
-        let mut tile_amount = tile_amount;
+        let mut tile_amount_y = tile_amount;
+        let mut tile_amount_x = tile_amount;
         match fileDialog::read_file(file) {
             Ok(result) => {
                 for line in result.split("\n") {
-                    if line.contains("height") || line.contains("width") {
+                    if line.contains("height") {
                         let words: Vec<&str> = line.split_whitespace().collect();
                         match words[1].parse::<u32>() {
                             Ok(size) => {
-                                tile_amount = size.min(512);
-                                break;
+                                tile_amount_y = size.min(512);
+                            }
+                            Err(_) => {}
+                        }
+                    } else if line.contains("width") {
+                        let words: Vec<&str> = line.split_whitespace().collect();
+                        match words[1].parse::<u32>() {
+                            Ok(size) => {
+                                tile_amount_x = size.min(512);
                             }
                             Err(_) => {}
                         }
                     }
+                    if line.contains("map") {
+                        break;
+                    }
                 }
                 let mut tiles: Vec<Tile> = Vec::new();
-                let mut tile_dim = board_size / tile_amount;
-                if tile_dim <= 1 {
-                    tile_dim = 2;
-                    board_size = (tile_amount * 2).min(1024);
-                }
+                let tile_height = 2;
+                let tile_width = 2;
+
+                board_size = tile_amount_x * tile_amount_y;
+
+                println!("{},{},{}", tile_amount_x, tile_amount_y, board_size);
+
                 for (i, char) in result
                     .chars()
-                    .filter(|c| c == &'.' || c == &'@')
+                    .filter(|c| ['@', '.', 'T', 'G', 'O', 'S', 'W'].contains(c))
                     .enumerate()
                 {
-                    if char == '.' {
-                        tiles.push(Tile::new(
-                            util::get_coordinate_from_idx(i, tile_amount, tile_amount),
-                            super::TileType::Floor,
-                            tile_dim,
-                            tile_dim,
-                            1,
-                            true,
-                            WHITE,
-                        ));
-                    } else if char == '@' {
-                        tiles.push(Tile::new(
-                            util::get_coordinate_from_idx(i, tile_amount, tile_amount),
-                            super::TileType::Obstacle,
-                            tile_dim,
-                            tile_dim,
-                            1,
-                            true,
-                            BLACK,
-                        ));
+                    match char {
+                        '.' => {
+                            tiles.push(Tile::new(
+                                util::get_coordinate_from_idx(i, tile_amount_x, tile_amount_y),
+                                super::TileType::Floor,
+                                tile_height,
+                                tile_width,
+                                1,
+                                true,
+                                WHITE,
+                            ));
+                        }
+                        '@' => {
+                            tiles.push(Tile::new(
+                                util::get_coordinate_from_idx(i, tile_amount_x, tile_amount_y),
+                                super::TileType::Obstacle,
+                                tile_height,
+                                tile_width,
+                                1,
+                                true,
+                                BLACK,
+                            ));
+                        }
+                        'O' => {
+                            tiles.push(Tile::new(
+                                util::get_coordinate_from_idx(i, tile_amount_x, tile_amount_y),
+                                super::TileType::Obstacle,
+                                tile_height,
+                                tile_width,
+                                1,
+                                true,
+                                BLACK,
+                            ));
+                        }
+                        'T' => {
+                            tiles.push(Tile::new(
+                                util::get_coordinate_from_idx(i, tile_amount_x, tile_amount_y),
+                                super::TileType::Obstacle,
+                                tile_height,
+                                tile_width,
+                                1,
+                                true,
+                                BLACK,
+                            ));
+                        }
+                        'S' => {
+                            tiles.push(Tile::new(
+                                util::get_coordinate_from_idx(i, tile_amount_x, tile_amount_y),
+                                super::TileType::Floor,
+                                tile_height,
+                                tile_width,
+                                120,
+                                true,
+                                Tile::calc_floor_color(120),
+                            ));
+                        }
+                        'W' => {
+                            tiles.push(Tile::new(
+                                util::get_coordinate_from_idx(i, tile_amount_x, tile_amount_y),
+                                super::TileType::Floor,
+                                tile_height,
+                                tile_width,
+                                255,
+                                true,
+                                Tile::calc_floor_color(255),
+                            ));
+                        }
+                        _ => {}
                     }
                 }
 
                 Ok(Board {
                     location: Point::new(0, 0),
-                    height: board_size,
-                    width: board_size,
-                    tile_amount_x: tile_amount,
-                    tile_amount_y: tile_amount,
+                    height: tile_amount_y * 2,
+                    width: tile_amount_x * 2,
+                    tile_amount_x: tile_amount_x,
+                    tile_amount_y: tile_amount_y,
                     selected_piece_type: TileType::Obstacle,
                     id: String::from("game_board"),
                     active: true,

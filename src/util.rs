@@ -141,9 +141,9 @@ pub fn add_file_to_dir_map(
 }
 
 #[inline]
-pub fn get_coordinate_from_idx(idx: usize, x_size: u32, _y_size: u32) -> (i32, i32) {
+pub fn get_coordinate_from_idx(idx: usize, x_size: u32, y_size: u32) -> (i32, i32) {
     let x = (idx % x_size as usize) as i32;
-    let y = (idx / x_size as usize) as i32;
+    let y = (idx / y_size as usize) as i32;
     (x, y)
 }
 
