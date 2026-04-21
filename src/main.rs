@@ -833,7 +833,7 @@ pub fn main() {
         updated_tiles: vec![],
     };
 
-    canvas.set_draw_color(Color::RGB(87, 87, 81));
+    canvas.set_draw_color(BLACK);
     canvas.clear();
     game_board.draw(&mut canvas, &texture_creator);
     canvas
@@ -844,7 +844,7 @@ pub fn main() {
     'running: loop {
         let mouse_state: sdl2::mouse::MouseState = sdl2::mouse::MouseState::new(&event_pump);
         let mouse_position = Point::new(mouse_state.x(), mouse_state.y());
-        canvas.set_draw_color(Color::RGB(87, 87, 81));
+        canvas.set_draw_color(BLACK);
         canvas.clear();
         game_board.draw(&mut canvas, &texture_creator);
         board_control_widget.draw(&mut canvas, &texture_creator, mouse_position, &mut font);
@@ -864,7 +864,7 @@ pub fn main() {
             canvas
                 .set_logical_size(window_width, window_height)
                 .unwrap();
-            canvas.set_draw_color(Color::RGB(87, 87, 81));
+            canvas.set_draw_color(BLACK);
             canvas.clear();
 
             game_board.change_location(Point::new(0, 0));
