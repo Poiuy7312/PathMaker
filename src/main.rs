@@ -995,7 +995,6 @@ pub fn main() {
                 }
                 false => {
                     game_board.draw(&mut canvas, &texture_creator);
-                    canvas.present();
                 }
             }
         }
