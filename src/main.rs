@@ -149,7 +149,6 @@ pub fn main() {
     let mut window = video_subsystem
         .window("PathMaker", window_width, window_height)
         .resizable()
-        .allow_highdpi()
         .position_centered()
         .build()
         .expect("Failed to render Window");
